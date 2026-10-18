@@ -21,9 +21,9 @@ export default function BibTracker() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
-  const load = async () => {
+  const load = async (silent = false) => {
     if (!activeEventId) { setLoading(false); return; }
-    setLoading(true);
+    if (!silent) setLoading(true);
     const [ps, sts, upds] = await Promise.all([
       base44.entities.Participant.filter({ event_id: activeEventId }),
       base44.entities.AideStation.filter({ event_id: activeEventId }),
@@ -40,6 +40,22 @@ export default function BibTracker() {
   };
 
   useEffect(() => { load(); }, [activeEventId]);
+
+  // Live updates: refetch quietly (no spinner) when records change, e.g. from the mobile app.
+  useEffect(() => {
+    if (!activeEventId) return;
+    let timer = null;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => load(true), 300);
+    };
+    const unsubs = [
+      base44.entities.Participant.subscribe(refresh),
+      base44.entities.ParticipantStatusUpdate.subscribe(refresh),
+      base44.entities.AideStation.subscribe(refresh),
+    ];
+    return () => { clearTimeout(timer); unsubs.forEach((u) => u()); };
+  }, [activeEventId]);
 
   const handleQuickUpdate = async ({ bibNumber, updateType, stationId, stationName, comment }) => {
     let participant = participants.find(p => p.bib_number === bibNumber);

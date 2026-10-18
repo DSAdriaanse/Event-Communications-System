@@ -101,9 +101,9 @@ export default function ResourceRequests() {
   // Always a dropdown; defaults to login station if set, else ""
   const [stationFilter, setStationFilter] = useState(() => localStorage.getItem("ecs_station_name") || "");
 
-  const load = async () => {
+  const load = async (silent = false) => {
     if (!activeEventId) { setLoading(false); return; }
-    setLoading(true);
+    if (!silent) setLoading(true);
     const [reqs, sts, ops] = await Promise.all([
       base44.entities.ResourceRequest.filter({ event_id: activeEventId }, "-created_date"),
       base44.entities.AideStation.filter({ event_id: activeEventId }),
@@ -116,6 +116,22 @@ export default function ResourceRequests() {
   };
 
   useEffect(() => { load(); }, [activeEventId]);
+
+  // Live updates: refetch quietly (no spinner) when records change, e.g. from the mobile app.
+  useEffect(() => {
+    if (!activeEventId) return;
+    let timer = null;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => load(true), 300);
+    };
+    const unsubs = [
+      base44.entities.ResourceRequest.subscribe(refresh),
+      base44.entities.AideStation.subscribe(refresh),
+      base44.entities.Operator.subscribe(refresh),
+    ];
+    return () => { clearTimeout(timer); unsubs.forEach((u) => u()); };
+  }, [activeEventId]);
 
   const openNew = () => {
     setEditing(null);
