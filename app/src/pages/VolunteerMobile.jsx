@@ -330,13 +330,20 @@ function ViewRequestsTab({ activeEventId }) {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("Open");
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     const reqs = await base44.entities.ResourceRequest.filter({ event_id: activeEventId }, "-created_date");
     setRequests(reqs); setLoading(false);
   };
 
   useEffect(() => { load(); }, [activeEventId]);
+
+  // live updates (quiet refetch, no spinner)
+  useEffect(() => {
+    let t = null;
+    const unsub = base44.entities.ResourceRequest.subscribe(() => { clearTimeout(t); t = setTimeout(() => load(true), 300); });
+    return () => { clearTimeout(t); unsub(); };
+  }, [activeEventId]);
 
   const filtered = requests.filter(r =>
     filter === "All" ? true :
@@ -381,9 +388,15 @@ function BibDetailCard({ participant }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
-    base44.entities.ParticipantStatusUpdate.filter({ participant_id: participant.id }, "timestamp")
-      .then(updates => { setHistory(updates); setLoading(false); });
+    let t = null;
+    const fetchHistory = (silent) => {
+      if (!silent) setLoading(true);
+      base44.entities.ParticipantStatusUpdate.filter({ participant_id: participant.id }, "timestamp")
+        .then(updates => { setHistory(updates); setLoading(false); });
+    };
+    fetchHistory(false);
+    const unsub = base44.entities.ParticipantStatusUpdate.subscribe(() => { clearTimeout(t); t = setTimeout(() => fetchHistory(true), 300); });
+    return () => { clearTimeout(t); unsub(); };
   }, [participant.id]);
 
   const badge = STATUS_BADGE[participant.status] || "bg-gray-700 text-gray-300 border-gray-600";
@@ -472,7 +485,8 @@ function MobileApp({ session, onLogout }) {
   const [participants, setParticipants] = useState([]);
 
   useEffect(() => {
-    Promise.all([
+    let t = null;
+    const fetchAll = () => Promise.all([
       base44.entities.AideStation.filter({ event_id: session.eventId }),
       base44.entities.Operator.filter({ event_id: session.eventId }),
       base44.entities.Participant.filter({ event_id: session.eventId }),
@@ -480,7 +494,16 @@ function MobileApp({ session, onLogout }) {
       setStations(sts.filter(s => s.status !== "Closed"));
       setOperators(ops);
       setParticipants(ps);
-    });
+    }).catch(() => {});
+    fetchAll();
+    // live updates: other volunteers and net control change participants/stations
+    const refresh = () => { clearTimeout(t); t = setTimeout(fetchAll, 300); };
+    const unsubs = [
+      base44.entities.Participant.subscribe(refresh),
+      base44.entities.AideStation.subscribe(refresh),
+      base44.entities.Operator.subscribe(refresh),
+    ];
+    return () => { clearTimeout(t); unsubs.forEach(u => u()); };
   }, [session.eventId]);
 
   return (
