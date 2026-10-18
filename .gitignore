@@ -1,0 +1,12 @@
+# Base44 export contains personal data (names, phones, e-mails) - never commit it
+migration/base44-export/
+migration/*.csv
+
+node_modules/
+dist/
+pb_data/
+*.log
+.env
+.env.*
+!deploy/ecs.env.example
+.DS_Store
