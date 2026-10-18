@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useEvent } from "@/components/EventContext";
-import { base44 } from "@/api/base44Client";
+import { callFunction } from "@/api/ecs";
 import { Copy, Check, Terminal, BookOpen, ExternalLink, Download, Upload, FileJson, ChevronDown, ChevronRight } from "lucide-react";
 
 const FUNCTION_BASE = `${window.location.origin}/api/functions/generatePrintableReport`;
@@ -283,7 +283,7 @@ export default function APIInterface() {
   const handleExport = async () => {
     if (!activeEvent) return;
     setExporting(true);
-    const res = await base44.functions.invoke('exportEventData', { eventId: activeEvent.id });
+    const res = await callFunction('exportEventData', { eventId: activeEvent.id });
     const json = JSON.stringify(res.data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -302,7 +302,7 @@ export default function APIInterface() {
     setImportResult(null);
     const text = await file.text();
     const data = JSON.parse(text);
-    const res = await base44.functions.invoke('importEventData', { eventId: activeEvent.id, data });
+    const res = await callFunction('importEventData', { eventId: activeEvent.id, data });
     setImportResult(res.data);
     setImporting(false);
     e.target.value = '';

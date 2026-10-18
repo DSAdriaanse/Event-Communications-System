@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db, callFunction } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -138,11 +138,11 @@ export default function IncidentMap() {
 
   const loadData = async () => {
     const [sts, asgn, ops, reqs, freqs] = await Promise.all([
-      base44.entities.AideStation.list(),
-      base44.entities.Assignment.list(),
-      base44.entities.Operator.list(),
-      activeEventId ? base44.entities.ResourceRequest.filter({ event_id: activeEventId }) : base44.entities.ResourceRequest.list(),
-      activeEventId ? base44.entities.Frequency.filter({ event_id: activeEventId }) : base44.entities.Frequency.list(),
+      db.aideStations.list(),
+      db.assignments.list(),
+      db.operators.list(),
+      activeEventId ? db.resourceRequests.filter({ event_id: activeEventId }) : db.resourceRequests.list(),
+      activeEventId ? db.frequencies.filter({ event_id: activeEventId }) : db.frequencies.list(),
     ]);
     setStations(activeEventId ? sts.filter(s => s.event_id === activeEventId) : sts);
     setAssignments(activeEventId ? asgn.filter(a => a.event_id === activeEventId) : asgn);
@@ -158,11 +158,11 @@ export default function IncidentMap() {
     loadData();
 
     const unsubs = [
-      base44.entities.AideStation.subscribe(() => loadData()),
-      base44.entities.Assignment.subscribe(() => loadData()),
-      base44.entities.Operator.subscribe(() => loadData()),
-      base44.entities.ResourceRequest.subscribe(() => loadData()),
-      base44.entities.Frequency.subscribe(() => loadData()),
+      db.aideStations.subscribe(() => loadData()),
+      db.assignments.subscribe(() => loadData()),
+      db.operators.subscribe(() => loadData()),
+      db.resourceRequests.subscribe(() => loadData()),
+      db.frequencies.subscribe(() => loadData()),
     ];
     return () => unsubs.forEach(u => u());
   }, [activeEventId]);
@@ -170,9 +170,9 @@ export default function IncidentMap() {
   // APRS.fi heartbeat — fires while this page is open; backend enforces 5-min cooldown
   // so only the first caller per window actually hits the APRS.fi API.
   useEffect(() => {
-    base44.functions.invoke('aprsFiTracker', {});
+    callFunction('aprsFiTracker', {});
     const interval = setInterval(() => {
-      base44.functions.invoke('aprsFiTracker', {});
+      callFunction('aprsFiTracker', {});
     }, 60000); // ping every minute; backend skips if < 5 min since last real call
     return () => clearInterval(interval);
   }, []);

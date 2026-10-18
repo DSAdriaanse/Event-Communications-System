@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useParams } from "react-router-dom";
 import { ArrowLeft, FileText, Loader2, Printer } from "lucide-react";
 import { formatEventTime, getTzAbbr } from "@/lib/eventTime";
@@ -19,11 +19,11 @@ export default function BulletinView() {
 
   useEffect(() => {
     if (!id) return;
-    base44.entities.Bulletin.get(id).then(async (b) => {
+    db.bulletins.get(id).then(async (b) => {
       setBulletin(b);
       if (b?.event_id) {
         try {
-          const ev = await base44.entities.Event.filter({ id: b.event_id }).then(r => r[0]);
+          const ev = await db.events.filter({ id: b.event_id }).then(r => r[0]);
           setEvent(ev);
         } catch { /* ignore */ }
       }

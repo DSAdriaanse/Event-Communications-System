@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Import a Base44 CSV export (Event_export.csv, Operator_export.csv, ...) into the ECS PocketBase.
+// One-time legacy import: Base44 CSV export (Event_export.csv, Operator_export.csv, ...) into the ECS PocketBase.
 //
-//   node scripts/import-base44.mjs --dir ./migration/base44-export \
+//   node migration/import-base44.mjs --dir ./migration/base44-export \
 //        --url http://127.0.0.1:8090 --email admin@example.com --password '...'
 //
 // * Original Base44 record ids and created/updated timestamps are preserved, so every cross

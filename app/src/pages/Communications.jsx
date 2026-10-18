@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { Send, CheckCheck, Radio, StickyNote, CheckSquare, Zap, FileText, Pencil } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -45,10 +45,10 @@ export default function Communications() {
   const load = async () => {
     if (!activeEventId) { setLoading(false); return; }
     const [logs, sts, ops, bltns] = await Promise.all([
-      base44.entities.EventLog.filter({ event_id: activeEventId }, "-created_date", 500),
-      base44.entities.AideStation.filter({ event_id: activeEventId }),
-      base44.entities.Operator.filter({ event_id: activeEventId }),
-      base44.entities.Bulletin.filter({ event_id: activeEventId }, "-created_date"),
+      db.eventLogs.filter({ event_id: activeEventId }, "-created_date", 500),
+      db.aideStations.filter({ event_id: activeEventId }),
+      db.operators.filter({ event_id: activeEventId }),
+      db.bulletins.filter({ event_id: activeEventId }, "-created_date"),
     ]);
     setEntries([...logs].reverse());
     setStations(sts);
@@ -73,7 +73,7 @@ export default function Communications() {
   }, [stations, operators]);
 
   useEffect(() => {
-    const unsub = base44.entities.EventLog.subscribe((event) => {
+    const unsub = db.eventLogs.subscribe((event) => {
       if (event.type === "create") {
         if (!activeEventId || event.data.event_id === activeEventId)
           setEntries(prev => [...prev, event.data]);
@@ -91,7 +91,7 @@ export default function Communications() {
   const sendCommunication = async () => {
     if (!form.content.trim() || !(form.from_callsign.trim() || form.from_station.trim())) return;
     setSending(true);
-    await base44.entities.EventLog.create({ ...form, type: "communication", event_id: activeEventId });
+    await db.eventLogs.create({ ...form, type: "communication", event_id: activeEventId });
     setForm(f => ({ ...f, content: "" }));
     setSending(false);
   };
@@ -99,7 +99,7 @@ export default function Communications() {
   const sendNote = async () => {
     if (!noteContent.trim()) return;
     setSending(true);
-    await base44.entities.EventLog.create({
+    await db.eventLogs.create({
       event_id: activeEventId,
       type: "note",
       content: noteContent.trim(),
@@ -110,16 +110,16 @@ export default function Communications() {
   };
 
   const ack = async (entry) => {
-    await base44.entities.EventLog.update(entry.id, { acknowledged: true, acknowledged_by: form.from_callsign || form.from_station || "NCO" });
+    await db.eventLogs.update(entry.id, { acknowledged: true, acknowledged_by: form.from_callsign || form.from_station || "NCO" });
   };
 
   const saveEdit = async (id, data) => {
-    await base44.entities.EventLog.update(id, data);
+    await db.eventLogs.update(id, data);
     setEntries(prev => prev.map(e => e.id === id ? { ...e, ...data } : e));
   };
 
   const deleteEntry = async (id) => {
-    await base44.entities.EventLog.delete(id);
+    await db.eventLogs.delete(id);
     setEntries(prev => prev.filter(e => e.id !== id));
   };
 

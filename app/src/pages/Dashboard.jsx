@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { useEvent } from "@/components/EventContext";
@@ -27,11 +27,11 @@ export default function Dashboard() {
 
   const loadData = useCallback(async () => {
     const [ops, sts, asgn, msgs, reqs] = await Promise.all([
-      base44.entities.Operator.filter({ event_id: activeEventId }),
-      base44.entities.AideStation.filter({ event_id: activeEventId }),
-      base44.entities.Assignment.filter({ event_id: activeEventId }),
-      base44.entities.EventLog.filter({ event_id: activeEventId }, "-created_date", 20),
-      base44.entities.ResourceRequest.filter({ event_id: activeEventId }),
+      db.operators.filter({ event_id: activeEventId }),
+      db.aideStations.filter({ event_id: activeEventId }),
+      db.assignments.filter({ event_id: activeEventId }),
+      db.eventLogs.filter({ event_id: activeEventId }, "-created_date", 20),
+      db.resourceRequests.filter({ event_id: activeEventId }),
     ]);
     setOperators(ops);
     setStations(sts);
@@ -52,11 +52,11 @@ export default function Dashboard() {
     loadData();
 
     const unsubs = [
-      base44.entities.Operator.subscribe(debouncedLoad),
-      base44.entities.AideStation.subscribe(debouncedLoad),
-      base44.entities.Assignment.subscribe(debouncedLoad),
-      base44.entities.EventLog.subscribe(debouncedLoad),
-      base44.entities.ResourceRequest.subscribe(debouncedLoad),
+      db.operators.subscribe(debouncedLoad),
+      db.aideStations.subscribe(debouncedLoad),
+      db.assignments.subscribe(debouncedLoad),
+      db.eventLogs.subscribe(debouncedLoad),
+      db.resourceRequests.subscribe(debouncedLoad),
     ];
     return () => { unsubs.forEach(u => u()); clearTimeout(debounceTimer.current); };
   }, [activeEventId]);

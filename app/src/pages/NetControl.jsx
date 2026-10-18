@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { useAuth } from "@/components/PinGate";
 import { formatEventTime } from "@/lib/eventTime";
@@ -86,7 +86,7 @@ export default function NetControl() {
   // Load tasks + timers from AppConfig on mount
   useEffect(() => {
     const load = async () => {
-      const configs = await base44.entities.AppConfig.list();
+      const configs = await db.appConfig.list();
       const tasksCfg = configs.find(c => c.key === TASKS_CONFIG_KEY);
       const timersCfg = configs.find(c => c.key === TIMERS_CONFIG_KEY);
 
@@ -118,9 +118,9 @@ export default function NetControl() {
     saveTimerRef.current = setTimeout(async () => {
       const value = JSON.stringify(timers);
       if (timersConfigId) {
-        await base44.entities.AppConfig.update(timersConfigId, { value });
+        await db.appConfig.update(timersConfigId, { value });
       } else {
-        const created = await base44.entities.AppConfig.create({ key: TIMERS_CONFIG_KEY, value });
+        const created = await db.appConfig.create({ key: TIMERS_CONFIG_KEY, value });
         setTimersConfigId(created.id);
       }
     }, 1000);
@@ -130,9 +130,9 @@ export default function NetControl() {
   const saveTasks = async (updatedTasks) => {
     const value = JSON.stringify(updatedTasks);
     if (tasksConfigId) {
-      await base44.entities.AppConfig.update(tasksConfigId, { value });
+      await db.appConfig.update(tasksConfigId, { value });
     } else {
-      const created = await base44.entities.AppConfig.create({ key: TASKS_CONFIG_KEY, value });
+      const created = await db.appConfig.create({ key: TASKS_CONFIG_KEY, value });
       setTasksConfigId(created.id);
     }
   };
@@ -142,7 +142,7 @@ export default function NetControl() {
     if (!activeEventId) return;
     let cancelled = false;
     const load = async () => {
-      const msgs = await base44.entities.EventLog.filter({ event_id: activeEventId });
+      const msgs = await db.eventLogs.filter({ event_id: activeEventId });
       if (!cancelled) setMessages(msgs);
     };
     load();
@@ -169,7 +169,7 @@ export default function NetControl() {
     setTimers(prev => ({ ...prev, [task.id]: { lastDone: Date.now() } }));
     setPendingDoneTask(null);
     if (activeEventId) {
-      await base44.entities.EventLog.create({
+      await db.eventLogs.create({
         event_id: activeEventId,
         type: "task_completion",
         task_id: task.id,

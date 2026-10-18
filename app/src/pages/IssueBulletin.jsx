@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ReactQuill from "react-quill";
 import "react-quill/dist/quill.snow.css";
-import { base44 } from "@/api/base44Client";
+import { db, callFunction } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { Send, Download, ArrowLeft, FileText, CheckCircle } from "lucide-react";
 import { createPageUrl } from "@/utils";
@@ -143,14 +143,14 @@ export default function IssueBulletin() {
     setSending(true);
 
     // 1. Save bulletin record
-    const bulletin = await base44.entities.Bulletin.create({
+    const bulletin = await db.bulletins.create({
       ...form,
       event_id: activeEventId,
     });
 
     // 2. Send email via sendICSEmail function (BULLETIN type)
     let sent = 0;
-    const emailRes = await base44.functions.invoke('sendICSEmail', {
+    const emailRes = await callFunction('sendICSEmail', {
       event_id: activeEventId,
       form_type: 'BULLETIN',
       bulletin_id: bulletin.id,
@@ -169,7 +169,7 @@ export default function IssueBulletin() {
     // 3. Post to EventLog so it appears in Communications feed
     const logContent = `📋 Bulletin Issued: "${form.subject}"${form.message_number ? ` [#${form.message_number}]` : ''} — issued by ${form.from_name || 'NCO'}
 Sent to ${sent} operator(s) via email.`;
-    const logEntry = await base44.entities.EventLog.create({
+    const logEntry = await db.eventLogs.create({
       event_id: activeEventId,
       type: "system_event",
       content: logContent,
@@ -178,7 +178,7 @@ Sent to ${sent} operator(s) via email.`;
     });
 
     // 4. Update bulletin with sent count and log id
-    await base44.entities.Bulletin.update(bulletin.id, { sent_count: sent, event_log_id: logEntry.id });
+    await db.bulletins.update(bulletin.id, { sent_count: sent, event_log_id: logEntry.id });
 
     setResult({ sent, bulletin: { ...bulletin, ...form } });
     setSending(false);

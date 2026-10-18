@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { Plus, Edit2, Trash2, X, Save, ChevronDown, ChevronRight, Radio, User } from "lucide-react";
 import { formatEventTime, parseAsUTC } from "@/lib/eventTime";
@@ -38,9 +38,9 @@ export default function Assignments() {
   const load = async () => {
     setLoading(true);
     const [a, o, s] = await Promise.all([
-      base44.entities.Assignment.list(),
-      base44.entities.Operator.list(),
-      base44.entities.AideStation.list(),
+      db.assignments.list(),
+      db.operators.list(),
+      db.aideStations.list(),
     ]);
     setAssignments(activeEventId ? a.filter(x => x.event_id === activeEventId) : a);
     setOperators(activeEventId ? o.filter(x => x.event_id === activeEventId) : o);
@@ -98,7 +98,7 @@ export default function Assignments() {
     setShowForm(true);
     setCopyTimes(false);
   };
-  const del = async (id) => { if (confirm("Delete assignment?")) { await base44.entities.Assignment.delete(id); load(); } };
+  const del = async (id) => { if (confirm("Delete assignment?")) { await db.assignments.delete(id); load(); } };
 
   const save = async () => {
     const data = {
@@ -107,11 +107,11 @@ export default function Assignments() {
       start_time: form.start_time ? fromEventLocalInput(form.start_time) : "",
       end_time: form.end_time ? fromEventLocalInput(form.end_time) : "",
     };
-    if (editing) await base44.entities.Assignment.update(editing, data);
-    else await base44.entities.Assignment.create(data);
+    if (editing) await db.assignments.update(editing, data);
+    else await db.assignments.create(data);
     if (copyTimes && (data.start_time || data.end_time)) {
       const others = assignments.filter(a => a.id !== editing && a.event_id === activeEventId);
-      await Promise.all(others.map(a => base44.entities.Assignment.update(a.id, {
+      await Promise.all(others.map(a => db.assignments.update(a.id, {
         start_time: data.start_time || a.start_time,
         end_time: data.end_time || a.end_time,
       })));

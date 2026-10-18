@@ -1,20 +1,22 @@
-// Compatibility layer: keeps the original `base44.entities.X.list/filter/get/create/update/delete/subscribe`
-// and `base44.functions.invoke` call sites working, backed by PocketBase.
+// ECS data layer over PocketBase.
+//   db.<collection>.list(sort, limit) / filter(query, sort, limit) / get(id) / create / update / delete / subscribe(cb)
+//   callFunction(name, params)  -> POST /api/functions/<name>
+// Records are returned as plain objects with ISO "T...Z" timestamps.
 import pb from './pb';
 
 const COLLECTIONS = {
-  Event: 'events',
-  AideStation: 'aide_stations',
-  Frequency: 'frequencies',
-  Operator: 'operators',
-  Assignment: 'assignments',
-  EventLog: 'event_logs',
-  ResourceRequest: 'resource_requests',
-  Participant: 'participants',
-  ParticipantStatusUpdate: 'participant_status_updates',
-  EventDocument: 'event_documents',
-  Bulletin: 'bulletins',
-  AppConfig: 'app_config',
+  events: 'events',
+  aideStations: 'aide_stations',
+  frequencies: 'frequencies',
+  operators: 'operators',
+  assignments: 'assignments',
+  eventLogs: 'event_logs',
+  resourceRequests: 'resource_requests',
+  participants: 'participants',
+  participantStatusUpdates: 'participant_status_updates',
+  eventDocuments: 'event_documents',
+  bulletins: 'bulletins',
+  appConfig: 'app_config',
 };
 
 const PB_DATE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
@@ -73,7 +75,7 @@ function entity(name) {
     update: async (id, data) => norm(await c().update(id, cleanBody(data, false))),
     delete: async (id) => { await c().delete(id); return { success: true }; },
     bulkCreate: async (rows) => Promise.all((rows || []).map((r) => c().create(cleanBody(r, true)).then(norm))),
-    /** Returns an unsubscribe function (synchronously), like the Base44 SDK. */
+    /** Realtime: returns an unsubscribe function synchronously. callback({type, id, data}) */
     subscribe(callback) {
       let off = null;
       let dead = false;
@@ -85,37 +87,26 @@ function entity(name) {
   };
 }
 
-const entities = new Proxy({}, {
+export const db = new Proxy({}, {
   get(target, name) {
     if (typeof name !== 'string' || !COLLECTIONS[name]) return undefined;
     return (target[name] ||= entity(name));
   },
 });
 
-const functions = {
-  async invoke(fn, params) {
-    const res = await fetch(`/api/functions/${fn}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...(pb.authStore.token ? { authorization: pb.authStore.token } : {}) },
-      body: JSON.stringify(params || {}),
-    });
-    const text = await res.text();
-    let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-    if (!res.ok) {
-      const err = new Error((data && (data.error || data.message)) || `Request failed (${res.status})`);
-      err.response = { status: res.status, data };
-      throw err;
-    }
-    return { data, status: res.status };
-  },
-};
-
-const auth = {
-  me: async () => { throw new Error('Not applicable: ECS uses PIN sessions'); },
-  isAuthenticated: async () => pb.authStore.isValid,
-  logout: () => pb.authStore.clear(),
-  redirectToLogin: () => { window.location.href = '/'; },
-};
-
-export const base44 = { entities, functions, auth };
-export default base44;
+/** Call a server function (POST /api/functions/<name>). Resolves to { data, status }; rejects with err.response on HTTP errors. */
+export async function callFunction(fn, params) {
+  const res = await fetch(`/api/functions/${fn}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(pb.authStore.token ? { authorization: pb.authStore.token } : {}) },
+    body: JSON.stringify(params || {}),
+  });
+  const text = await res.text();
+  let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok) {
+    const err = new Error((data && (data.error || data.message)) || `Request failed (${res.status})`);
+    err.response = { status: res.status, data };
+    throw err;
+  }
+  return { data, status: res.status };
+}

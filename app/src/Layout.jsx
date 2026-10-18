@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/lib/useTheme";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { EventProvider, useEvent } from "@/components/EventContext";
 import { PinGateProvider, useAuth } from "@/components/PinGate";
 
@@ -241,7 +241,7 @@ function LayoutInner({ children, currentPageName }) {
         setUnackedMsgs(0);
         return;
       }
-      const msgs = await base44.entities.EventLog.filter({ event_id: activeEventId });
+      const msgs = await db.eventLogs.filter({ event_id: activeEventId });
       const msgArray = Array.isArray(msgs) ? msgs : (msgs?.data || []);
       const unacked = msgArray.filter(m => m.type === "communication" && !m.acknowledged).length;
       setUnackedMsgs(unacked);
@@ -250,7 +250,7 @@ function LayoutInner({ children, currentPageName }) {
     // Refresh every 10 seconds
     const interval = setInterval(loadUnackedCount, 10000);
     // Subscribe to real-time updates
-    const unsubscribe = base44.entities.EventLog.subscribe(() => loadUnackedCount());
+    const unsubscribe = db.eventLogs.subscribe(() => loadUnackedCount());
     return () => {
       clearInterval(interval);
       unsubscribe();

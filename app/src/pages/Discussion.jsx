@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { useAuth } from "@/components/PinGate";
 import { Save, Loader2, MessageSquareText } from "lucide-react";
@@ -46,7 +46,7 @@ export default function Discussion() {
     if (!activeEventId) return;
     setSaving(true);
     setSaved(false);
-    await base44.entities.Event.update(activeEventId, { discussion: html });
+    await db.events.update(activeEventId, { discussion: html });
     await loadEvents();
     setSaving(false);
     setSaved(true);

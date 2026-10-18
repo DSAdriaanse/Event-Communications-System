@@ -1,6 +1,5 @@
 // Printable HTML reports (ICS 201/204/205A/213/309, resource requests, bib report, snapshot,
-// full event report). Ported verbatim from base44/functions/generatePrintableReport/entry.ts —
-// only the timezone helpers moved to lib/tz.js (goja has no Intl).
+// full event report). Timezone formatting lives in lib/tz.js (the PocketBase JS engine has no Intl).
 //
 // SECURITY: these templates interpolate stored data into HTML like the original did. The route in
 // main.pb.js therefore serves them with a Content-Security-Policy that forbids scripts entirely.

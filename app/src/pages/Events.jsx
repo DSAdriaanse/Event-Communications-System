@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { useAuth } from "@/components/PinGate";
 import { Plus, Edit2, Trash2, X, Save, Radio, CheckCircle, Copy, ShieldCheck } from "lucide-react";
@@ -31,8 +31,8 @@ export default function Events() {
   const load = async () => {
     setLoading(true);
     const [data, cfgList] = await Promise.all([
-      base44.entities.Event.list("-date"),
-      base44.entities.AppConfig.list(),
+      db.events.list("-date"),
+      db.appConfig.list(),
     ]);
     setEvents(data);
     const rec = cfgList.find(c => c.key === "admin_pin");
@@ -44,9 +44,9 @@ export default function Events() {
   const saveAdminPin = async () => {
     setSavingPin(true);
     if (adminPinRecord) {
-      await base44.entities.AppConfig.update(adminPinRecord.id, { value: adminPin });
+      await db.appConfig.update(adminPinRecord.id, { value: adminPin });
     } else {
-      const rec = await base44.entities.AppConfig.create({ key: "admin_pin", value: adminPin });
+      const rec = await db.appConfig.create({ key: "admin_pin", value: adminPin });
       setAdminPinRecord(rec);
     }
     setSavingPin(false);
@@ -68,9 +68,9 @@ export default function Events() {
     if (data.end_datetime && !data.end_datetime.includes('Z')) {
       data.end_datetime = new Date(data.end_datetime).toISOString();
     }
-    if (editing) await base44.entities.Event.update(editing, data);
+    if (editing) await db.events.update(editing, data);
     else {
-      const created = await base44.entities.Event.create(data);
+      const created = await db.events.create(data);
       if (form.status === "Active") selectEvent(created.id);
     }
     setShowForm(false);
@@ -80,7 +80,7 @@ export default function Events() {
 
   const del = async (id) => {
     if (confirm("Delete this event? This does not delete associated data.")) {
-      await base44.entities.Event.delete(id);
+      await db.events.delete(id);
       load();
       loadEvents();
     }
@@ -93,7 +93,7 @@ export default function Events() {
   const duplicate = async (ev) => {
     if (!window.confirm(`Duplicate "${ev.name}"? All data except communications will be copied.`)) return;
     // Create new event (reset date and status to Planning)
-    const newEvent = await base44.entities.Event.create({
+    const newEvent = await db.events.create({
       name: ev.name + " (Copy)",
       incident_name: ev.incident_name,
       location: ev.location,
@@ -107,28 +107,28 @@ export default function Events() {
     const newId = newEvent.id;
     const strip = ({ id, created_date, updated_date, created_by, ...rest }) => rest;
     const [operators, stations, assignments, frequencies] = await Promise.all([
-      base44.entities.Operator.filter({ event_id: ev.id }),
-      base44.entities.AideStation.filter({ event_id: ev.id }),
-      base44.entities.Assignment.filter({ event_id: ev.id }),
-      base44.entities.Frequency.filter({ event_id: ev.id }),
+      db.operators.filter({ event_id: ev.id }),
+      db.aideStations.filter({ event_id: ev.id }),
+      db.assignments.filter({ event_id: ev.id }),
+      db.frequencies.filter({ event_id: ev.id }),
     ]);
     // Create frequencies first and build an old-ID → new-ID map
     const freqIdMap = {};
     for (const f of frequencies) {
-      const newFreq = await base44.entities.Frequency.create({ ...strip(f), event_id: newId });
+      const newFreq = await db.frequencies.create({ ...strip(f), event_id: newId });
       freqIdMap[f.id] = newFreq.id;
     }
-    for (const o of operators) await base44.entities.Operator.create({ ...strip(o), event_id: newId });
+    for (const o of operators) await db.operators.create({ ...strip(o), event_id: newId });
     // Remap frequency IDs on stations so they reference the new event's frequencies
     for (const s of stations) {
-      await base44.entities.AideStation.create({
+      await db.aideStations.create({
         ...strip(s),
         event_id: newId,
         primary_frequency_id: freqIdMap[s.primary_frequency_id] || null,
         backup_frequency_id: freqIdMap[s.backup_frequency_id] || null,
       });
     }
-    for (const a of assignments) await base44.entities.Assignment.create({ ...strip(a), event_id: newId, status: "Scheduled" });
+    for (const a of assignments) await db.assignments.create({ ...strip(a), event_id: newId, status: "Scheduled" });
     load();
     loadEvents();
   };

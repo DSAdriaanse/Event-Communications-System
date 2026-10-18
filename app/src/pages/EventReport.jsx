@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db, callFunction } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { FileText, Download, Loader2, WifiOff, Send } from "lucide-react";
 import { buildICS201Html, buildICS204Html, buildICS205AHtml } from "@/lib/icsTemplates";
@@ -509,7 +509,7 @@ export default function EventReport() {
 
   const issueForm = async (form_type) => {
     setIssuing(form_type);
-    const res = await base44.functions.invoke("sendICSEmail", { event_id: activeEventId, form_type });
+    const res = await callFunction("sendICSEmail", { event_id: activeEventId, form_type });
     setIssuing(null);
     alert(`${form_type} issued to ${res.data.sent} operator(s): ${res.data.recipients.join(", ")}`);
   };
@@ -518,15 +518,15 @@ export default function EventReport() {
     if (!activeEventId) return;
     setLoading(true);
     const [eventLogs, stations, assignments, frequencies, operators, participants, bibUpdates, resourceRequests, bulletins] = await Promise.all([
-      base44.entities.EventLog.filter({ event_id: activeEventId }, "-created_date", 500),
-      base44.entities.AideStation.list(),
-      base44.entities.Assignment.list(),
-      base44.entities.Frequency.list(),
-      base44.entities.Operator.list(),
-      base44.entities.Participant.filter({ event_id: activeEventId }),
-      base44.entities.ParticipantStatusUpdate.filter({ event_id: activeEventId }),
-      base44.entities.ResourceRequest.filter({ event_id: activeEventId }),
-      base44.entities.Bulletin.filter({ event_id: activeEventId }, "-created_date"),
+      db.eventLogs.filter({ event_id: activeEventId }, "-created_date", 500),
+      db.aideStations.list(),
+      db.assignments.list(),
+      db.frequencies.list(),
+      db.operators.list(),
+      db.participants.filter({ event_id: activeEventId }),
+      db.participantStatusUpdates.filter({ event_id: activeEventId }),
+      db.resourceRequests.filter({ event_id: activeEventId }),
+      db.bulletins.filter({ event_id: activeEventId }, "-created_date"),
     ]);
     const sortByOrder = (arr) => [...arr].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     const sortBibs = (arr) => [...arr].sort((a, b) => {

@@ -26,9 +26,8 @@ routerAdd("GET", "/api/ecs/public-events", (e) => {
 
 routerAdd("POST", "/api/ecs/login", (e) => require(`${__hooks}/lib/auth.js`).login(e));
 
-// ------------------------------------------------- Base44-compatible "functions" API
-// Same URL shape as Base44 (/api/functions/<name>) so existing report links keep working
-// when the old hostname is pointed at this server.
+// ------------------------------------------------------------- server functions API
+// /api/functions/<name>. The report URL shape is stable: printed/emailed report links rely on it.
 const REQUIRE_AUTH = $apis.requireAuth("ecs_users");
 
 routerAdd("POST", "/api/functions/exportEventData", (e) => require(`${__hooks}/lib/functions.js`).exportEventData(e), REQUIRE_AUTH);
@@ -39,18 +38,18 @@ routerAdd("POST", "/api/functions/aprsFiTracker", (e) => {
   return e.json(r.status, r.body);
 }, REQUIRE_AUTH);
 
-// Printable reports: HTTP GET, no auth — same contract as the Base44 original
+// Printable reports: HTTP GET, no auth
 // ("All report URLs are simple HTTP GET requests"). The 24-char event id is the capability.
 routerAdd("GET", "/api/functions/generatePrintableReport", (e) => require(`${__hooks}/lib/functions.js`).generatePrintableReport(e));
 routerAdd("POST", "/api/functions/generatePrintableReport", (e) => require(`${__hooks}/lib/functions.js`).generatePrintableReport(e));
 
-// APRS.fi position poller (replaces the Base44 scheduled workflow, every 5 minutes)
+// APRS.fi position poller (every 5 minutes)
 cronAdd("ecs_aprs_fi", "*/5 * * * *", () => {
   try { require(`${__hooks}/lib/functions.js`).aprsFiTracker(); } catch (err) { console.log("[ecs] aprs cron:", String(err)); }
 });
 
 // ------------------------------------------------------- record defaults + audit fields
-// (replaces Base44 schema defaults, created_date/updated_date/created_by)
+// (schema defaults and created_date/updated_date/created_by)
 const ECS_COLLECTIONS = [
   "events", "aide_stations", "frequencies", "operators", "assignments", "event_logs",
   "resource_requests", "participants", "participant_status_updates", "event_documents",

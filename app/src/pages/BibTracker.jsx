@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { Users, Upload, Plus, Search } from "lucide-react";
 import BibQuickEntry from "@/components/bibtracker/BibQuickEntry";
@@ -25,9 +25,9 @@ export default function BibTracker() {
     if (!activeEventId) { setLoading(false); return; }
     if (!silent) setLoading(true);
     const [ps, sts, upds] = await Promise.all([
-      base44.entities.Participant.filter({ event_id: activeEventId }),
-      base44.entities.AideStation.filter({ event_id: activeEventId }),
-      base44.entities.ParticipantStatusUpdate.filter({ event_id: activeEventId }),
+      db.participants.filter({ event_id: activeEventId }),
+      db.aideStations.filter({ event_id: activeEventId }),
+      db.participantStatusUpdates.filter({ event_id: activeEventId }),
     ]);
     setParticipants(ps.sort((a, b) => {
       const an = parseInt(a.bib_number) || 0;
@@ -50,9 +50,9 @@ export default function BibTracker() {
       timer = setTimeout(() => load(true), 300);
     };
     const unsubs = [
-      base44.entities.Participant.subscribe(refresh),
-      base44.entities.ParticipantStatusUpdate.subscribe(refresh),
-      base44.entities.AideStation.subscribe(refresh),
+      db.participants.subscribe(refresh),
+      db.participantStatusUpdates.subscribe(refresh),
+      db.aideStations.subscribe(refresh),
     ];
     return () => { clearTimeout(timer); unsubs.forEach((u) => u()); };
   }, [activeEventId]);
@@ -61,7 +61,7 @@ export default function BibTracker() {
     let participant = participants.find(p => p.bib_number === bibNumber);
     if (!participant) {
       // Auto-create unknown bib
-      participant = await base44.entities.Participant.create({
+      participant = await db.participants.create({
         event_id: activeEventId,
         bib_number: bibNumber,
         runner_name: "Unknown",
@@ -72,14 +72,14 @@ export default function BibTracker() {
       });
     } else {
       const newStatus = updateType === "Seen" ? (participant.status === "Active" || !participant.status ? "Active" : participant.status) : updateType;
-      await base44.entities.Participant.update(participant.id, {
+      await db.participants.update(participant.id, {
         status: newStatus,
         current_location_name: updateType === "Seen" ? stationName : participant.current_location_name,
         current_location_station_id: updateType === "Seen" ? stationId : participant.current_location_station_id,
         last_update_date: new Date().toISOString(),
       });
     }
-    await base44.entities.ParticipantStatusUpdate.create({
+    await db.participantStatusUpdates.create({
       event_id: activeEventId,
       participant_id: participant.id,
       bib_number: bibNumber,
@@ -98,8 +98,8 @@ export default function BibTracker() {
     if (!selectedParticipant) return;
     // Delete all updates for this participant first
     const participantUpdates = updates.filter(u => u.participant_id === selectedParticipant.id);
-    await Promise.all(participantUpdates.map(u => base44.entities.ParticipantStatusUpdate.delete(u.id)));
-    await base44.entities.Participant.delete(selectedParticipant.id);
+    await Promise.all(participantUpdates.map(u => db.participantStatusUpdates.delete(u.id)));
+    await db.participants.delete(selectedParticipant.id);
     setSelectedParticipant(null);
     await load();
   };

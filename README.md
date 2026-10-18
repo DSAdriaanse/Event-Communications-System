@@ -2,15 +2,15 @@
 
 Net-control / event-communications suite for amateur-radio support of events (aid stations, operators, frequencies,
 assignments, comms log, resource requests, bib tracking, ICS forms, bulletins, live map).
-This is the former Base44 app converted into a **self-hosted, single-binary stack on PocketBase**:
+A **self-hosted, single-binary stack on PocketBase**:
 
 | Layer | What |
 |---|---|
 | Server | [PocketBase](https://pocketbase.io) 0.40.5 – database, REST + realtime API, static hosting of the UI |
 | Server logic | JavaScript hooks in `pocketbase/pb_hooks` (PIN login, reports, ICS e-mail, export/import, APRS.fi poller) |
 | Schema | `pocketbase/pb_migrations` (applied automatically on start) |
-| UI | React/Vite app in `app/` (the original UI; only its data layer was swapped for PocketBase) |
-| Ops | `deploy/bootstrap.sh` (Debian/Ubuntu), `scripts/import-base44.mjs` (CSV import) |
+| UI | React/Vite app in `app/`, talking to PocketBase through `app/src/api/ecs.js` |
+| Ops | `deploy/bootstrap.sh` (Debian/Ubuntu), 
 
 ## Install on a Debian / Ubuntu server
 
@@ -57,7 +57,7 @@ A second suite on the same host: `sudo ./deploy/bootstrap.sh --instance ecs-demo
 
 ```
 --domain HOST --proxy nginx|caddy|none --certbot   public host name, proxy, Let's Encrypt
---import-dir DIR                                    import a Base44 CSV export (default: migration/base44-export if present)
+--import-dir DIR                                    legacy import from an old Base44 CSV export (default: migration/base44-export if present)
 --smtp-host H --smtp-port P --smtp-user U --smtp-pass PW [--smtp-tls]   e-mail for bulletins/ICS forms
 --aprs-key KEY                                      aprs.fi position polling
 --admin-pin PIN  --superuser-email E --superuser-password PW
@@ -69,15 +69,15 @@ A second suite on the same host: `sudo ./deploy/bootstrap.sh --instance ecs-demo
 PocketBase is downloaded from GitHub releases (pinned `0.40.5`, override with `--pb-version`); if GitHub is not
 reachable the script falls back to the `pocketbase-bin` wheel on PyPI.
 
-## Migrating the Base44 data
+## Importing data from the legacy Base44 deployment (optional, one time)
 
 See [`migration/README.md`](migration/README.md). Place the exported CSVs in `migration/base44-export/` (git-ignored)
-and bootstrap picks them up, or run `node scripts/import-base44.mjs` later. Ids and timestamps are preserved.
+and bootstrap picks them up, or run `node migration/import-base44.mjs` later. Ids and timestamps are preserved.
 
 ## How it works
 
 ### Authentication (PIN model, now enforced by the server)
-The Base44 app checked PINs in the browser. Here `POST /api/ecs/login` verifies the PIN server-side and issues a real
+`POST /api/ecs/login` verifies the PIN on the server and issues a real
 PocketBase token for a service account in `ecs_users` (`admin`, or `event` bound to one event). The collection rules
 then enforce access: an event session can only read/write records whose `event_id` is its own event; the admin session
 can do everything. Brute force is throttled (10 failures / 10 min / IP). Changing a PIN revokes the sessions of that scope.
@@ -87,10 +87,10 @@ and is readable by admins only. The PIN **list of events** on the login screen c
 
 Behind a proxy the bootstrap sets PocketBase's trusted-proxy header (`X-Forwarded-For`) so throttling sees real client IPs.
 
-### Server functions (`/api/functions/<name>`, same URLs as Base44)
+### Server functions (`/api/functions/<name>`)
 `exportEventData`, `importEventData`, `sendICSEmail`, `aprsFiTracker` require a session.
 `generatePrintableReport` (ICS 201/204/205A/213/309, resource requests, bib report, offline snapshot, full report) is
-public by event id exactly like the original, so existing report links keep working when your old hostname points here.
+public by event id, so printed and emailed report links work without a login.
 
 ### E-mail
 Bulletins and ICS forms are sent with PocketBase's mailer (**Settings → Mail settings** in `/_/`, or `--smtp-*` at install).
@@ -122,12 +122,12 @@ cd pocketbase && ECS_ADMIN_PIN=1234 pocketbase serve --http 127.0.0.1:8090 --dir
 # terminal 2: UI with live reload (proxies /api to PocketBase)
 cd app && npm install && npm run dev
 ```
-`app/src/api/base44Client.js` is a small compatibility layer: the pages still call
-`base44.entities.X.list/filter/create/update/delete/subscribe` and `base44.functions.invoke`, which now talk to PocketBase.
+`app/src/api/ecs.js` is the UI's data layer: `db.<collection>.list/filter/get/create/update/delete/subscribe` and
+`callFunction(name, params)`. Lists that must stay current subscribe to realtime changes and refetch quietly.
 
-## Differences from the Base44 version
+## Notes
 
-* No Base44 account/login; access is PIN based only (as it effectively was).
-* Documents are links, as before; links that point at Base44 file storage stop working once that app is gone (re-host the files and update the links).
-* E-mail goes through your SMTP server instead of Brevo.
-* The nightly cleanup job is gone: deleting an event cascades to all its records in the database.
+* Access is PIN based (admin PIN, per-event PIN); there are no individual user accounts.
+* Documents are links to files hosted elsewhere.
+* E-mail goes through your own SMTP server.
+* Deleting an event cascades to all of its records in the database; no cleanup job is needed.

@@ -1,20 +1,17 @@
 /// <reference path="../pb_data/types.d.ts" />
 //
-// ECS schema — ported from the Base44 entities (base44/entities/*.jsonc).
+// ECS schema.
 //
 // Design notes
-//  * Field names are IDENTICAL to the Base44 entities so the React UI keeps working
-//    unchanged. Base44's built-in `created_date` / `updated_date` are plain date fields
-//    stamped by hooks (pb_hooks/main.pb.js) — PocketBase "autodate" fields cannot be set
+//  * `created_date` / `updated_date` are plain date fields stamped by hooks (pb_hooks/main.pb.js) — PocketBase "autodate" fields cannot be set
 //    explicitly, which would make it impossible to import historical timestamps.
 //    `created_by` is a text field filled by a hook.
-//  * The record `id` is relaxed (15–24 chars, a-z0-9) so ids exported from Base44
+//  * The record `id` is relaxed (15–24 chars, a-z0-9) so ids from the legacy system
 //    (24 hex chars) can be imported verbatim and every cross reference keeps working.
-//  * App-level timestamps (start_time, timestamp, last_heard ...) are kept as TEXT, exactly
-//    as Base44 stored them (ISO strings, sometimes without a zone). The UI already parses
-//    them with parseAsUTC(), so no behaviour changes.
-//  * Only `event_id` is a real relation (cascade delete). That replaces the Base44
-//    "nightlyCleanup" orphan sweeper: deleting an Event now removes its data atomically.
+//  * App-level timestamps (start_time, timestamp, last_heard ...) are kept as TEXT (ISO strings,
+//    sometimes without a zone); the UI parses them with parseAsUTC().
+//  * Only `event_id` is a real relation (cascade delete). Deleting an Event removes
+//    all of its data atomically, so no orphan cleanup job is needed.
 //  * Access control lives in the collection rules (see ecs_users + /api/ecs/login in
 //    pb_hooks/main.pb.js): admin sessions see everything, event sessions only their event.
 
@@ -230,7 +227,7 @@ migrate((app) => {
     txt("file_type", { max: 255 }),
     num("size_bytes"),
     long("description"),
-    // NEW: Base44 hosted files are not reachable once Base44 is gone — new uploads live here.
+    // Uploaded files are stored by PocketBase (file_url remains for external links).
     { name: "file", type: "file", maxSelect: 1, maxSize: 50 * 1024 * 1024, protected: true },
   ]);
 

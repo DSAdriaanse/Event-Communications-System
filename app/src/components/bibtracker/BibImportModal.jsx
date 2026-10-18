@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { X, Upload, AlertCircle } from "lucide-react";
 
 export default function BibImportModal({ eventId, onClose, onImported }) {
@@ -43,15 +43,15 @@ export default function BibImportModal({ eventId, onClose, onImported }) {
   const doImport = async () => {
     setImporting(true);
     let created = 0, updated = 0;
-    const existing = await base44.entities.Participant.filter({ event_id: eventId });
+    const existing = await db.participants.filter({ event_id: eventId });
     const existingMap = new Map(existing.map(p => [p.bib_number, p]));
     for (const row of preview) {
       const match = existingMap.get(row.bib_number);
       if (match) {
-        await base44.entities.Participant.update(match.id, { runner_name: row.runner_name });
+        await db.participants.update(match.id, { runner_name: row.runner_name });
         updated++;
       } else {
-        await base44.entities.Participant.create({ event_id: eventId, bib_number: row.bib_number, runner_name: row.runner_name, status: "Active" });
+        await db.participants.create({ event_id: eventId, bib_number: row.bib_number, runner_name: row.runner_name, status: "Active" });
         created++;
       }
     }

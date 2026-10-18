@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { Plus, Search, Edit2, Trash2, X, Save, ChevronUp, ChevronDown } from "lucide-react";
 
@@ -35,8 +35,8 @@ export default function Operators() {
   const load = async () => {
     setLoading(true);
     const [ops, asgn] = await Promise.all([
-      base44.entities.Operator.list(),
-      base44.entities.Assignment.list(),
+      db.operators.list(),
+      db.assignments.list(),
     ]);
     setOperators(activeEventId ? ops.filter(o => o.event_id === activeEventId) : ops);
     setAssignments(activeEventId ? asgn.filter(a => a.event_id === activeEventId) : asgn);
@@ -56,14 +56,14 @@ export default function Operators() {
       latitude: isNoneSource ? null : (form.latitude ? parseFloat(form.latitude) : undefined),
       longitude: isNoneSource ? null : (form.longitude ? parseFloat(form.longitude) : undefined),
     };
-    if (editing) await base44.entities.Operator.update(editing, data);
-    else await base44.entities.Operator.create(data);
+    if (editing) await db.operators.update(editing, data);
+    else await db.operators.create(data);
     setShowForm(false);
     load();
   };
 
   const del = async (id) => {
-    if (confirm("Delete this operator?")) { await base44.entities.Operator.delete(id); load(); }
+    if (confirm("Delete this operator?")) { await db.operators.delete(id); load(); }
   };
 
   const addCert = () => {
