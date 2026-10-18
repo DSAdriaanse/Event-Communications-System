@@ -36,6 +36,8 @@
 #   -y, --yes                never prompt
 #
 set -Eeuo pipefail
+# root shells entered with plain `su` lack the sbin dirs (useradd, runuser, nginx live there)
+export PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"
 
 # ------------------------------------------------------------------ defaults
 INSTANCE=ecs
