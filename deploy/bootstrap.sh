@@ -15,7 +15,9 @@
 #   --listen ADDR            bind address; default 127.0.0.1 with a proxy/domain, else 0.0.0.0
 #   --domain HOST            public host name; adds a reverse-proxy site for it (see --proxy)
 #   --proxy nginx|caddy|none reverse proxy to configure for --domain            [auto-detect]
-#   --certbot                after nginx is configured, request a Let's Encrypt certificate for --domain
+#   --email ADDR             contact for Let's Encrypt; with --domain this turns on HTTPS (certbot) for nginx
+#   --no-certbot             skip the certificate even when --email is given
+#   --certbot                request a Let's Encrypt certificate (no --email: registers without one)
 #   --admin-pin PIN          initial ECS admin PIN (blank database only)         [random 6 digits]
 #   --superuser-email MAIL   PocketBase superuser                                 [admin@<instance>.local]
 #   --superuser-password PW  PocketBase superuser password                        [random]
@@ -25,7 +27,8 @@
 #   --smtp-host H --smtp-port P --smtp-user U --smtp-pass PW [--smtp-tls]   e-mail via your SMTP server
 #   --mail-from-name N --mail-from-address A
 #   --aprs-key KEY           aprs.fi API key for position polling
-#   --repo URL --ref REF     where to fetch the code when not run from a checkout
+#   --branch NAME (--ref)    branch/tag to fetch when not run from a checkout; warns if a checkout is on another branch
+#   --repo URL               where to fetch the code when not run from a checkout
 #   --install-dir DIR        override /opt/<instance>
 #   --pb-version V           PocketBase version                                   [0.40.5]
 #   --no-systemd             no user/unit: run as the current user in the background (testing, containers)
@@ -41,6 +44,8 @@ LISTEN=""
 DOMAIN=""
 PROXY=""
 CERTBOT=0
+NO_CERTBOT=0
+LE_EMAIL=""
 ADMIN_PIN=""
 SU_EMAIL=""
 SU_PASS=""
@@ -78,6 +83,8 @@ while [ $# -gt 0 ]; do
     --domain) DOMAIN="$2"; shift 2;;
     --proxy) PROXY="$2"; shift 2;;
     --certbot) CERTBOT=1; shift;;
+    --no-certbot) NO_CERTBOT=1; shift;;
+    --email) LE_EMAIL="$2"; shift 2;;
     --admin-pin) ADMIN_PIN="$2"; shift 2;;
     --superuser-email) SU_EMAIL="$2"; shift 2;;
     --superuser-password) SU_PASS="$2"; shift 2;;
@@ -93,7 +100,7 @@ while [ $# -gt 0 ]; do
     --mail-from-address) MAIL_ADDR="$2"; shift 2;;
     --aprs-key) APRS_KEY="$2"; shift 2;;
     --repo) REPO_URL="$2"; shift 2;;
-    --ref) REF="$2"; shift 2;;
+    --ref|--branch) REF="$2"; shift 2;;
     --install-dir) INSTALL_DIR="$2"; shift 2;;
     --pb-version) PB_VERSION="$2"; shift 2;;
     --no-systemd) NO_SYSTEMD=1; shift;;
@@ -192,6 +199,8 @@ case "$(uname -m)" in
   *) die "unsupported CPU architecture: $(uname -m)";;
 esac
 
+[ -z "$SU_EMAIL" ] && [ -n "$LE_EMAIL" ] && SU_EMAIL="$LE_EMAIL"
+[ -n "$DOMAIN" ] && [ -n "$LE_EMAIL" ] && [ "$NO_CERTBOT" -eq 0 ] && CERTBOT=1
 # ------------------------------------------------------------------ port selection
 reserved_ports() {
   # ports currently listening ...
@@ -270,6 +279,11 @@ SRC="$INSTALL_DIR/src"
 SRC_FROM=""
 if [ -n "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR/../pocketbase/pb_hooks" ] && [ -d "$SCRIPT_DIR/../app/src" ]; then
   SRC_FROM="$(cd "$SCRIPT_DIR/.." && pwd)"
+  CUR_BRANCH="$(git -C "$SRC_FROM" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [ -n "$CUR_BRANCH" ] && [ "$REF" != main ] && [ "$CUR_BRANCH" != "$REF" ]; then
+    warn "checkout $SRC_FROM is on '$CUR_BRANCH' but --branch is '$REF'; deploying what is checked out"
+  fi
+  log "Deploying from checkout $SRC_FROM (${CUR_BRANCH:-no git})"
 else
   log "Fetching source from $REPO_URL ($REF)"
   CLONE="$(mktemp -d)"; TMPS+=("$CLONE")
@@ -450,7 +464,8 @@ if [ "$PROXY" = nginx ] && [ -n "$DOMAIN" ]; then
   fi
   if [ "$CERTBOT" -eq 1 ]; then
     have certbot || DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx
-    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect \
+    if [ -n "$LE_EMAIL" ]; then CB_EMAIL=(-m "$LE_EMAIL"); else CB_EMAIL=(--register-unsafely-without-email); fi
+    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos "${CB_EMAIL[@]}" --redirect \
       || warn "certbot failed; the site works over HTTP. Run certbot manually once DNS points here."
   fi
 elif [ "$PROXY" = caddy ] && [ -n "$DOMAIN" ]; then

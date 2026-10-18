@@ -21,6 +21,19 @@ sudo ./deploy/bootstrap.sh --domain ecs.example.org          # with nginx/Caddy 
 sudo ./deploy/bootstrap.sh                                    # plain, no proxy (LAN)
 ```
 
+### Deploying from a private/deploy-key clone (typical server flow)
+
+```bash
+GIT_SSH_COMMAND="ssh -i /root/.ssh/ecs-deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+  git clone -b main git@github.com:DSAdriaanse/event_communications_system.git /opt/ecs-src
+
+bash /opt/ecs-src/deploy/bootstrap.sh --branch main \
+  --domain ecs.apps.swcrs.org --email you@example.org --superuser-email you@example.org
+```
+With `--domain` and `--email` the script also sets up nginx and a Let's Encrypt certificate (`--no-certbot` to skip).
+To upgrade later: `git -C /opt/ecs-src pull` (same `GIT_SSH_COMMAND`), then re-run the same bootstrap line.
+Keep the clone (`/opt/ecs-src`) separate from the install (`/opt/ecs`).
+
 The script is idempotent: running it again upgrades code and keeps data, PINs and credentials.
 It prints the URL, the admin PIN and where the PocketBase superuser credentials are stored
 (`/etc/<instance>/credentials.txt`, root only).
