@@ -9,13 +9,16 @@ import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { db } from "@/api/ecs";
 import { EventProvider, useEvent } from "@/components/EventContext";
 import { PinGateProvider, useAuth } from "@/components/PinGate";
+import { isModuleEnabled, MODULES } from "@/lib/modules";
+
+const MODULE_PAGES = MODULES.map(m => m.page);
 
 const DEFAULT_NAV_GROUPS = [
   {
     label: "Event Management",
     items: [
       { label: "Dashboard", page: "Dashboard", icon: Shield },
-      { label: "Communications", page: "Communications", icon: MessageSquare },
+      { label: "Communications Log", page: "Communications", icon: MessageSquare },
       { label: "Event Map", page: "IncidentMap", icon: MapPin },
       { label: "Positions", page: "AideStations", icon: Radio },
       { label: "Frequencies", page: "Frequencies", icon: Zap },
@@ -51,6 +54,10 @@ const PAGE_ICONS = Object.fromEntries(
   DEFAULT_NAV_GROUPS.flatMap(g => g.items.map(i => [i.page, i.icon]))
 );
 
+const PAGE_LABELS = Object.fromEntries(
+  DEFAULT_NAV_GROUPS.flatMap(g => g.items.map(i => [i.page, i.label]))
+);
+
 const NAV_ORDER_KEY = "ecs_nav_order";
 
 function loadNavGroups() {
@@ -61,7 +68,7 @@ function loadNavGroups() {
     // Re-attach icon references (can't serialize functions)
     const restored = saved.map(g => ({
       ...g,
-      items: g.items.map(i => ({ ...i, icon: PAGE_ICONS[i.page] || Shield })),
+      items: g.items.map(i => ({ ...i, label: PAGE_LABELS[i.page] || i.label, icon: PAGE_ICONS[i.page] || Shield })),
     }));
     // Merge in any new items from DEFAULT_NAV_GROUPS that aren't in saved order
     const savedPages = new Set(restored.flatMap(g => g.items.map(i => i.page)));
@@ -89,7 +96,7 @@ function saveNavGroups(groups) {
 // Pages that are accessible without an active event
 const ALWAYS_UNLOCKED = ["Events", "Landing", "APIInterface"];
 
-function NavItems({ activeEventId, currentPageName, onNavigate, unackedMsgs, editMode, navGroups, onDragEnd }) {
+function NavItems({ activeEventId, currentPageName, onNavigate, unackedMsgs, editMode, navGroups, offPages, onDragEnd }) {
   if (editMode) {
     return (
       <DragDropContext onDragEnd={onDragEnd}>
@@ -155,10 +162,11 @@ function NavItems({ activeEventId, currentPageName, onNavigate, unackedMsgs, edi
                   active
                     ? "bg-cyan-500/15 text-cyan-400 border border-cyan-500/20"
                     : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
-                }`}
+                } ${offPages?.has(page) ? "opacity-50" : ""}`}
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 {label}
+                {offPages?.has(page) && <span className="ml-auto text-[9px] uppercase tracking-wider text-amber-400/80 border border-amber-500/30 rounded px-1">off</span>}
                 {page === "Communications" && unackedMsgs > 0 && (
                   <style>{`@keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.3; } }`}</style>
                 )}
@@ -206,6 +214,13 @@ function LayoutInner({ children, currentPageName }) {
   const { activeEventId, activeEvent } = useEvent();
   const { auth, logout, isAdmin } = useAuth();
   const { theme, setTheme } = useTheme();
+
+  // Modules switched off for the active event: hidden for operators, dimmed (still usable) for admins.
+  const off = new Set(MODULE_PAGES.filter(p => !isModuleEnabled(activeEvent, p)));
+  const visibleGroups = isAdmin
+    ? navGroups
+    : navGroups.map(g => ({ ...g, items: g.items.filter(i => !off.has(i.page)) })).filter(g => g.items.length > 0);
+  const pageDisabled = !isAdmin && !!activeEvent && off.has(currentPageName);
 
   const handleDragEnd = (result) => {
     if (!result.destination) return;
@@ -308,7 +323,7 @@ function LayoutInner({ children, currentPageName }) {
 
         <nav className="flex-1 px-2 py-4 overflow-y-auto space-y-0.5">
           {sidebarCollapsed ? (
-            navGroups.flatMap(g => g.items).map(({ page, icon: Icon, label }) => {
+            visibleGroups.flatMap(g => g.items).map(({ page, icon: Icon, label }) => {
               const active = currentPageName === page;
               const locked = !activeEventId && !ALWAYS_UNLOCKED.includes(page);
               if (locked) return (
@@ -327,7 +342,7 @@ function LayoutInner({ children, currentPageName }) {
               );
             })
           ) : (
-            <NavItems activeEventId={activeEventId} currentPageName={currentPageName} unackedMsgs={unackedMsgs} editMode={editMode} navGroups={navGroups} onDragEnd={handleDragEnd} />
+            <NavItems activeEventId={activeEventId} currentPageName={currentPageName} unackedMsgs={unackedMsgs} editMode={editMode} navGroups={editMode ? navGroups : visibleGroups} offPages={isAdmin ? off : null} onDragEnd={handleDragEnd} />
           )}
         </nav>
 
@@ -404,7 +419,7 @@ function LayoutInner({ children, currentPageName }) {
               )}
             </div>
             <div className="px-3 py-2 space-y-0.5">
-              <NavItems activeEventId={activeEventId} currentPageName={currentPageName} onNavigate={() => setMobileOpen(false)} unackedMsgs={unackedMsgs} editMode={false} navGroups={navGroups} onDragEnd={handleDragEnd} />
+              <NavItems activeEventId={activeEventId} currentPageName={currentPageName} onNavigate={() => setMobileOpen(false)} unackedMsgs={unackedMsgs} editMode={false} navGroups={visibleGroups} offPages={isAdmin ? off : null} onDragEnd={handleDragEnd} />
             </div>
           </div>
         </div>
@@ -413,7 +428,14 @@ function LayoutInner({ children, currentPageName }) {
       {/* Main content */}
       <main className={`flex-1 pt-0 lg:pt-0 min-h-screen transition-all duration-300 ${currentPageName === "BibMobile" ? "" : (sidebarCollapsed ? "lg:ml-14" : "lg:ml-60")}`}>
         <div className={`${currentPageName === "BibMobile" ? "" : "pt-14 lg:pt-0"} h-full`}>
-          {children}
+          {pageDisabled ? (
+            <div className="min-h-[60vh] flex items-center justify-center p-6">
+              <div className="max-w-sm text-center space-y-2">
+                <p className="text-white font-semibold">This module is not enabled for this event</p>
+                <p className="text-sm text-gray-500">Ask your event administrator if you need it turned on.</p>
+              </div>
+            </div>
+          ) : children}
         </div>
       </main>
     </div>

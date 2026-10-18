@@ -27,7 +27,11 @@ export function EventProvider({ children }) {
   // Events are only readable with a session, so (re)load whenever the login state changes.
   useEffect(() => {
     loadEvents();
-    return pb.authStore.onChange(() => { loadEvents(); });
+    const offAuth = pb.authStore.onChange(() => { loadEvents(); });
+    // Event settings (e.g. module switches) change live for everyone viewing the event.
+    let t = null;
+    const offLive = db.events.subscribe(() => { clearTimeout(t); t = setTimeout(loadEvents, 300); });
+    return () => { offAuth(); offLive(); clearTimeout(t); };
   }, []);
 
   const selectEvent = (id) => {

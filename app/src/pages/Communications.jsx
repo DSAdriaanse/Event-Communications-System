@@ -142,7 +142,7 @@ export default function Communications() {
             <Radio className="w-4 h-4 text-cyan-400" />
           </div>
           <div>
-            <h1 className="text-white font-bold">Communications</h1>
+            <h1 className="text-white font-bold">Communications Log</h1>
             <p className="text-gray-500 text-xs">{entries.length} entries{activeEvent ? ` · ${activeEvent.name}` : ""}{unackedComms.length > 0 ? ` · ${unackedComms.length} unacked` : ""}</p>
           </div>
         </div>

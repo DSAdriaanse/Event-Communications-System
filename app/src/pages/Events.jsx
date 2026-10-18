@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { db } from "@/api/ecs";
+import { MODULES } from "@/lib/modules";
 import { useEvent } from "@/components/EventContext";
 import { useAuth } from "@/components/PinGate";
 import { Plus, Edit2, Trash2, X, Save, Radio, CheckCircle, Copy, ShieldCheck } from "lucide-react";
@@ -12,7 +13,7 @@ const STATUS_COLORS = {
   Archived: "bg-gray-500/10 text-gray-400 border-gray-500/20",
 };
 
-const empty = { name: "", incident_name: "", date: "", start_datetime: "", end_datetime: "", location: "", net_control_callsign: "", status: "Planning", timezone: "America/Phoenix", pin: "", notes: "" };
+const empty = { name: "", incident_name: "", date: "", start_datetime: "", end_datetime: "", location: "", net_control_callsign: "", status: "Planning", timezone: "America/Phoenix", pin: "", notes: "", disabled_modules: [] };
 
 export default function Events() {
   const [events, setEvents] = useState([]);
@@ -55,6 +56,11 @@ export default function Events() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const toggleModule = (page) => setForm(f => {
+    const cur = Array.isArray(f.disabled_modules) ? f.disabled_modules : [];
+    return { ...f, disabled_modules: cur.includes(page) ? cur.filter(p => p !== page) : [...cur, page] };
+  });
 
   const openNew = () => { setForm(empty); setEditing(null); setShowForm(true); };
   const openEdit = (e) => { setForm({ ...e }); setEditing(e.id); setShowForm(true); };
@@ -103,6 +109,7 @@ export default function Events() {
       discussion: ev.discussion,
       conops_comms: ev.conops_comms,
       documents_url: ev.documents_url,
+      disabled_modules: ev.disabled_modules || [],
     });
     const newId = newEvent.id;
     const strip = ({ id, created_date, updated_date, created_by, ...rest }) => rest;
@@ -293,6 +300,31 @@ export default function Events() {
                 <textarea value={form.notes || ""} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none resize-none" />
               </div>
+              {isAdmin && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-gray-400">Modules <span className="text-gray-600">(unchecked = hidden from operators of this event)</span></label>
+                    <div className="flex gap-3 text-xs">
+                      <button type="button" onClick={() => setForm(f => ({ ...f, disabled_modules: [] }))} className="text-cyan-400 hover:text-cyan-300">All on</button>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, disabled_modules: MODULES.map(m => m.page) }))} className="text-gray-500 hover:text-gray-300">All off</button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 bg-gray-800/50 border border-gray-800 rounded-lg p-3">
+                    {MODULES.map(({ page, label }) => (
+                      <label key={page} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={!(form.disabled_modules || []).includes(page)}
+                          onChange={() => toggleModule(page)}
+                          className="accent-cyan-500"
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-gray-600 mt-1">Admins always see every module (disabled ones are dimmed in the sidebar).</p>
+                </div>
+              )}
             </div>
             <div className="px-6 py-4 border-t border-gray-800 flex justify-end gap-3">
               <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { db } from "@/api/ecs";
 import { pb, ecsLogin, fetchPublicEvents } from "@/api/pb";
+import { isModuleEnabled } from "@/lib/modules";
 import { Radio, MapPin, Hash, Loader2, Plus, List, Search, Lock, LogOut, Eye, EyeOff, ChevronDown } from "lucide-react";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -478,8 +479,26 @@ function BibLookupTab({ participants }) {
 }
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
+// Mobile tabs follow the event's module switches (Bib Tracker / Resource Requests / Mobile Entry).
+const TAB_MODULE = { bib: "BibTracker", lookup: "BibTracker", request: "ResourceRequests", requests: "ResourceRequests" };
+
 function MobileApp({ session, onLogout }) {
   const [tab, setTab] = useState("bib");
+  const [event, setEvent] = useState(null);
+
+  useEffect(() => {
+    const fetchEvent = () => db.events.get(session.eventId).then(setEvent).catch(() => {});
+    fetchEvent();
+    const unsub = db.events.subscribe((e) => { if (e.id === session.eventId) fetchEvent(); });
+    return unsub;
+  }, [session.eventId]);
+
+  const visibleTabs = TABS.filter(t => isModuleEnabled(event, TAB_MODULE[t.id]));
+  const mobileOff = !isModuleEnabled(event, "VolunteerMobile");
+  const tabOk = (id) => !mobileOff && visibleTabs.some(t => t.id === id);
+  useEffect(() => {
+    if (visibleTabs.length && !visibleTabs.some(t => t.id === tab)) setTab(visibleTabs[0].id);
+  }, [visibleTabs.map(t => t.id).join(",")]);
   const [stations, setStations] = useState([]);
   const [operators, setOperators] = useState([]);
   const [participants, setParticipants] = useState([]);
@@ -518,8 +537,8 @@ function MobileApp({ session, onLogout }) {
           <LogOut className="w-3.5 h-3.5" /> Leave
         </button>
       </div>
-      <div className="flex-none grid grid-cols-4 border-b border-gray-800 bg-gray-900">
-        {TABS.map(({ id, label, icon: Icon }) => (
+      <div className="flex-none grid border-b border-gray-800 bg-gray-900" style={{ gridTemplateColumns: `repeat(${Math.max(visibleTabs.length, 1)}, minmax(0, 1fr))` }}>
+        {visibleTabs.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setTab(id)}
             className={`flex flex-col items-center gap-0.5 py-2.5 text-xs font-medium transition-all ${tab === id ? "text-cyan-400 border-b-2 border-cyan-400" : "text-gray-500"}`}>
             <Icon className="w-4 h-4" />
@@ -528,10 +547,13 @@ function MobileApp({ session, onLogout }) {
         ))}
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4 pb-10">
-        {tab === "bib" && <BibEntryTab stations={stations} participants={participants} activeEventId={session.eventId} setParticipants={setParticipants} lockedStationId={session.stationId || null} lockedCallsign={session.callsign || null} />}
-        {tab === "request" && <ResourceRequestTab stations={stations} operators={operators} activeEventId={session.eventId} lockedStationId={session.stationId || null} lockedCallsign={session.callsign || null} />}
-        {tab === "requests" && <ViewRequestsTab activeEventId={session.eventId} />}
-        {tab === "lookup" && <BibLookupTab participants={participants} activeEventId={session.eventId} />}
+        {(mobileOff || visibleTabs.length === 0) && (
+          <p className="text-center text-sm text-gray-500 py-10">{mobileOff ? "Mobile entry is not enabled for this event." : "No mobile entry features are enabled for this event."}</p>
+        )}
+        {tabOk("bib") && tab === "bib" && <BibEntryTab stations={stations} participants={participants} activeEventId={session.eventId} setParticipants={setParticipants} lockedStationId={session.stationId || null} lockedCallsign={session.callsign || null} />}
+        {tabOk("request") && tab === "request" && <ResourceRequestTab stations={stations} operators={operators} activeEventId={session.eventId} lockedStationId={session.stationId || null} lockedCallsign={session.callsign || null} />}
+        {tabOk("requests") && tab === "requests" && <ViewRequestsTab activeEventId={session.eventId} />}
+        {tabOk("lookup") && tab === "lookup" && <BibLookupTab participants={participants} activeEventId={session.eventId} />}
       </div>
     </div>
   );

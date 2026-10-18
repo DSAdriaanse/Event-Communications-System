@@ -127,6 +127,7 @@ cd app && npm install && npm run dev
 
 ## Notes
 
+* **Module switches:** in Events > Edit, an admin can switch each module on or off per event. Operators of that event no longer see disabled modules in the sidebar (or on the mobile entry tabs) and get a notice if they open the URL; admins see everything, with disabled modules dimmed. This is a UI-level switch, not a data-access rule.
 * Access is PIN based (admin PIN, per-event PIN); there are no individual user accounts.
 * Documents are links to files hosted elsewhere.
 * E-mail goes through your own SMTP server.
