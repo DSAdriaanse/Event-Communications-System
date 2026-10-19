@@ -397,19 +397,19 @@ function LayoutInner({ children, currentPageName }) {
       </aside>
 
       {/* Mobile header */}
-      <div className={`lg:hidden fixed top-0 left-0 right-0 z-50 bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between ${currentPageName === "BibMobile" ? "hidden" : ""}`}>
+      <div style={{ paddingTop: "env(safe-area-inset-top, 0px)", paddingLeft: "max(1rem, env(safe-area-inset-left, 0px))", paddingRight: "max(0.5rem, env(safe-area-inset-right, 0px))" }} className={`lg:hidden fixed top-0 left-0 right-0 z-50 bg-gray-900 border-b border-gray-800 h-auto flex items-center justify-between ${currentPageName === "BibMobile" ? "hidden" : ""}`}>
         <div className="flex items-center gap-2">
           <Radio className="w-5 h-5 text-cyan-400" />
           <span className="text-sm font-bold text-white">SWCRS ECS</span>
         </div>
-        <button onClick={() => setMobileOpen(!mobileOpen)} className="text-gray-400 hover:text-white">
-          {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        <button onClick={() => setMobileOpen(!mobileOpen)} aria-label={mobileOpen ? "Close menu" : "Open menu"} className="w-12 h-12 flex items-center justify-center text-gray-400 hover:text-white touch-manipulation">
+          {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
       </div>
 
       {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 bg-black/60" onClick={() => setMobileOpen(false)}>
-          <div className="w-60 h-full bg-gray-900 border-r border-gray-800 pt-16 overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="lg:hidden fixed inset-0 z-40 bg-black/60 cursor-pointer" onClick={() => setMobileOpen(false)}>
+          <div style={{ paddingTop: "calc(4rem + env(safe-area-inset-top, 0px))" }} className="w-60 h-full bg-gray-900 border-r border-gray-800 overflow-y-auto cursor-default" onClick={e => e.stopPropagation()}>
             <div className="px-3 py-2">
               {isAdmin ? <EventSelector /> : activeEvent && (
                 <div className="py-1">
@@ -426,8 +426,8 @@ function LayoutInner({ children, currentPageName }) {
       )}
 
       {/* Main content */}
-      <main className={`flex-1 pt-0 lg:pt-0 min-h-screen transition-all duration-300 ${currentPageName === "BibMobile" ? "" : (sidebarCollapsed ? "lg:ml-14" : "lg:ml-60")}`}>
-        <div className={`${currentPageName === "BibMobile" ? "" : "pt-14 lg:pt-0"} h-full`}>
+      <main className={`flex-1 min-w-0 overflow-x-auto pt-0 lg:pt-0 min-h-screen transition-all duration-300 ${currentPageName === "BibMobile" ? "" : (sidebarCollapsed ? "lg:ml-14" : "lg:ml-60")}`}>
+        <div style={currentPageName === "BibMobile" ? undefined : { paddingTop: "calc(3rem + env(safe-area-inset-top, 0px))" }} className={`${currentPageName === "BibMobile" ? "" : "lg:!pt-0"} h-full`}>
           {pageDisabled ? (
             <div className="min-h-[60vh] flex items-center justify-center p-6">
               <div className="max-w-sm text-center space-y-2">
