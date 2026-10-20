@@ -196,7 +196,7 @@ function aprsFiTracker() {
     url: `https://api.aprs.fi/api/get?name=${encodeURIComponent(unique.join(","))}&what=loc&apikey=${encodeURIComponent(key)}&format=json`,
     method: "GET",
     timeout: 20,
-    headers: { "User-Agent": "ECS-PocketBase/1.0 (+https://github.com/DSAdriaanse/event_communications_system)" },
+    headers: { "User-Agent": "ECS-PocketBase/1.0 (+https://github.com/DSAdriaanse/Event-Communication-Systems)" },
   });
   const data = res.json || {};
   if (data.result !== "ok") {

@@ -10,13 +10,13 @@ A **self-hosted, single-binary stack on PocketBase**:
 | Server logic | JavaScript hooks in `pocketbase/pb_hooks` (PIN login, reports, ICS e-mail, export/import, APRS.fi poller) |
 | Schema | `pocketbase/pb_migrations` (applied automatically on start) |
 | UI | React/Vite app in `app/`, talking to PocketBase through `app/src/api/ecs.js` |
-| Ops | `deploy/bootstrap.sh` (Debian/Ubuntu), 
+| Ops | `deploy/bootstrap.sh` (Debian/Ubuntu): users, systemd, nginx/Caddy, HTTPS, upgrades |
 
 ## Install on a Debian / Ubuntu server
 
 ```bash
-git clone https://github.com/DSAdriaanse/event_communications_system.git
-cd event_communications_system
+git clone https://github.com/DSAdriaanse/Event-Communication-Systems.git
+cd Event-Communication-Systems
 sudo ./deploy/bootstrap.sh --domain ecs.example.org          # with nginx/Caddy site
 sudo ./deploy/bootstrap.sh                                    # plain, no proxy (LAN)
 ```
@@ -25,7 +25,7 @@ sudo ./deploy/bootstrap.sh                                    # plain, no proxy 
 
 ```bash
 GIT_SSH_COMMAND="ssh -i /root/.ssh/ecs-deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
-  git clone -b main git@github.com:DSAdriaanse/event_communications_system.git /opt/ecs-src
+  git clone -b main git@github.com:DSAdriaanse/Event-Communication-Systems.git /opt/ecs-src
 
 bash /opt/ecs-src/deploy/bootstrap.sh --branch main \
   --domain ecs.apps.swcrs.org --email you@example.org --superuser-email you@example.org
@@ -124,6 +124,20 @@ cd app && npm install && npm run dev
 ```
 `app/src/api/ecs.js` is the UI's data layer: `db.<collection>.list/filter/get/create/update/delete/subscribe` and
 `callFunction(name, params)`. Lists that must stay current subscribe to realtime changes and refetch quietly.
+
+## License
+
+Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, modify and run it for
+noncommercial purposes, including charities, clubs, schools and amateur-radio groups. Commercial use, including
+offering it as a paid or hosted service, needs a separate license from the author. Southwest Community Radio System and
+Tucson GMRS Association, Inc. use it free of charge under a grant from the author.
+
+## Security
+
+* Report vulnerabilities privately through GitHub's "Report a vulnerability" (Security tab) rather than a public issue.
+* PINs are stored in clear text and access is PIN based, so run it behind HTTPS and treat it as an event tool, not a
+  system holding sensitive personal data.
+* Never commit `/etc/<instance>/` files, `pb_data` or legacy export CSVs; the `.gitignore` already excludes them.
 
 ## Notes
 
