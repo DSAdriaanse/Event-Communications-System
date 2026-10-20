@@ -102,6 +102,20 @@ cd app && npm install && npm run dev
 `app/src/api/ecs.js` is the UI's data layer: `db.<collection>.list/filter/get/create/update/delete/subscribe` and
 `callFunction(name, params)`. Lists that must stay current subscribe to realtime changes and refetch quietly.
 
+## License
+
+Source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE). You may use, modify and run it for
+noncommercial purposes, including charities, clubs, schools and amateur-radio groups. Commercial use, including
+offering it as a paid or hosted service, needs a separate license from the author. Southwest Community Radio System and
+Tucson GMRS Association, Inc. use it free of charge under a grant from the author.
+
+## Security
+
+* Report vulnerabilities privately through GitHub's "Report a vulnerability" (Security tab) rather than a public issue.
+* PINs are stored in clear text and access is PIN based, so run it behind HTTPS and treat it as an event tool, not a
+  system holding sensitive personal data.
+* Never commit `/etc/<instance>/` files, `pb_data` or legacy export CSVs; the `.gitignore` already excludes them.
+
 ## Notes
 
 * **Module switches:** in Events > Edit, an admin can switch each module on or off per event. Operators of that event no longer see disabled modules in the sidebar (or on the mobile entry tabs) and get a notice if they open the URL; admins see everything, with disabled modules dimmed. This is a UI-level switch, not a data-access rule.

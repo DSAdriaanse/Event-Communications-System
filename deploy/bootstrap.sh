@@ -43,7 +43,7 @@
 set -euo pipefail
 export PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"
 
-REPO=${REPO:-https://github.com/DSAdriaanse/event_communications_system.git}
+REPO=${REPO:-https://github.com/DSAdriaanse/Event-Communications-System.git}
 BRANCH=${BRANCH:-}
 NAME=${NAME:-ecs}
 # Every path is named after the instance. SRC, ENV_FILE and CONF can still be overridden from the environment.
