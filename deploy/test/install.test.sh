@@ -377,14 +377,17 @@ mkdir -p "$U/opt/ecs" "$U/etc/ecs" "$U/lib/ecs/pb_data"; printf 'PW_PORT=8091\nP
 printf 'User=ecs\nExecStart=%s/opt/ecs/pocketbase serve\n' "$U" > "$U/units/ecs.service"; touch "$U/cron/ecs" "$U/bin/ecs-update"
 mkdir -p "$U/opt/old/bin" "$U/etc/old"; printf 'PORT=8092\nPROXY=caddy\nDOMAIN=old.example.org\n' > "$U/etc/old/instance.conf"
 printf 'User=old\nExecStart=%s/opt/old/bin/pocketbase serve\n' "$U" > "$U/units/old.service"
+mkdir -p "$U/opt/rtn" "$U/etc/rtn"; printf 'RT_PORT=8093\nRT_MODE=proxy\nRT_PROXY_IPS=10.0.0.5\nAPP_URL=https://rtn.example.org\n' > "$U/etc/rtn/env"
+printf 'User=rtn\nExecStart=%s/opt/rtn/pocketbase serve\n' "$U" > "$U/units/rtn.service"
 mkdir -p "$U/opt/other"; printf 'ExecStart=%s/opt/other/pocketbase serve\n' "$U" > "$U/units/other.service"
 UENV="UNIT_DIR=$U/units CRON_DIR=$U/cron BIN_DIR=$U/bin OPT_DIR=$U/opt LIB_DIR=$U/lib ETC_DIR=$U/etc BACKUP_ROOT=$U/bk TMP_DIR=$U/tmp NGINX_DIR=$U/nginx SSH_DIR=$U/ssh CADDY_DIR=$U/caddy SKIP_SYSTEMCTL=1 SKIP_ROOT_CHECK=1 ARCHIVE_DIR=$U/archive"
 out=$(env $UENV bash "$HERE/uninstall-instances.sh" --dry-run 2>&1)
 ok "finds the current layout and the old ECS layout" "echo \"\$out\" | grep -q 'ecs .*type=std' && echo \"\$out\" | grep -q 'old .*type=old-ecs'"
+ok "finds an app whose settings use another prefix (RT_PORT) and reads its port and mode" "echo \"\$out\" | grep -q 'rtn .*type=std .*mode=proxy .*port=8093'"
 ok "ignores a PocketBase service that has no installer settings file" "! echo \"\$out\" | grep -q 'other'"
 ok "dry run removes nothing" "[ -d $U/opt/ecs ] && [ -f $U/units/ecs.service ]"
 env $UENV bash "$HERE/uninstall-instances.sh" --yes --purge-leftovers >/dev/null 2>&1
-ok "real run removes both instances and archives them" "[ ! -e $U/opt/ecs ] && [ ! -e $U/opt/old ] && [ ! -e $U/units/ecs.service ] && [ ! -e $U/cron/ecs ] && [ -f $U/archive/ecs.tar.gz ] && [ -f $U/archive/old.tar.gz ]"
+ok "real run removes both instances and archives them" "[ ! -e $U/opt/ecs ] && [ ! -e $U/opt/old ] && [ ! -e $U/opt/rtn ] && [ ! -e $U/units/rtn.service ] && [ ! -e $U/units/ecs.service ] && [ ! -e $U/cron/ecs ] && [ -f $U/archive/ecs.tar.gz ] && [ -f $U/archive/old.tar.gz ]"
 ok "real run leaves the unrelated service alone" "[ -f $U/units/other.service ] && [ -d $U/opt/other ]"
 
 echo "--- generated config"

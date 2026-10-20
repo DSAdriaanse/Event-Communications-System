@@ -14,7 +14,7 @@
 #   --keep-backups  keep /var/backups/<name>
 #   --purge-leftovers  also delete anything the final sweep finds named after an instance
 #
-# An instance is found by its systemd unit: a PocketBase service with the installer's settings file (/etc/<name>/env with PW_PORT, or /etc/<name>/instance.conf). Both installers are
+# An instance is found by its systemd unit: a PocketBase service with the installer's settings file (/etc/<name>/env with a <PREFIX>_PORT line such as PW_PORT or RT_PORT, or /etc/<name>/instance.conf). Both installers are
 # recognised: the Priority-Watch style one (Priority-Watch, Round-Table-Net) and the Event Communications System one.
 # For each one it removes: the service, the hourly backup cron job, /opt/<name>, /opt/<name>-src,
 # /var/lib/<name> (the database), /etc/<name> (env file and secrets), /var/backups/<name>,
@@ -70,7 +70,7 @@ env_get() { local f=$1 k=$2; [ -f "$f" ] && sed -n "s/^$k=//p" "$f" | head -1 ||
 #   std     = current layout shared by ECS, Priority-Watch and Round-Table-Net: /etc/<n>/env, code in /opt/<n>
 #   old-ecs = installs made by the previous ECS installer: /etc/<n>/instance.conf, code and data inside /opt/<n>
 load_instance() {
-  local n=$1 conf envf
+  local n=$1 conf envf px
   I_PROXYIPS=
   if [ -f "$ETC_DIR/$n/instance.conf" ]; then
     KIND=old-ecs; conf=$ETC_DIR/$n/instance.conf
@@ -78,8 +78,10 @@ load_instance() {
     I_DIR=$(env_get "$conf" INSTALL_DIR)
   else
     KIND=std; envf=$ETC_DIR/$n/env
-    I_MODE=$(env_get "$envf" PW_MODE); I_PORT=$(env_get "$envf" PW_PORT); I_URL=$(env_get "$envf" APP_URL)
-    I_PROXYIPS=$(env_get "$envf" PW_PROXY_IPS); I_DIR=
+    # Each app has its own prefix for the same settings (PW_PORT, RT_PORT, ...). Use whichever this one has.
+    px=$(sed -n 's/^\([A-Z][A-Z0-9]*\)_PORT=.*/\1/p' "$envf" 2>/dev/null | head -1); px=${px:-PW}
+    I_MODE=$(env_get "$envf" "${px}_MODE"); I_PORT=$(env_get "$envf" "${px}_PORT"); I_URL=$(env_get "$envf" APP_URL)
+    I_PROXYIPS=$(env_get "$envf" "${px}_PROXY_IPS"); I_DIR=
   fi
   I_DIR=${I_DIR:-$OPT_DIR/$n}
   I_DOMAIN=${I_URL#http://}; I_DOMAIN=${I_DOMAIN#https://}; I_DOMAIN=${I_DOMAIN%%/*}
@@ -96,7 +98,7 @@ for unit in "$UNIT_DIR"/*.service; do
   n=$(basename "$unit" .service)
   grep -Eq "^ExecStart=.*pocketbase( |$)" "$unit" || continue
   # Must carry the installer's own settings file, so an unrelated PocketBase service is never touched.
-  if [ ! -f "$ETC_DIR/$n/instance.conf" ] && ! grep -q '^PW_PORT=' "$ETC_DIR/$n/env" 2>/dev/null; then continue; fi
+  if [ ! -f "$ETC_DIR/$n/instance.conf" ] && ! grep -Eq '^[A-Z][A-Z0-9]*_PORT=' "$ETC_DIR/$n/env" 2>/dev/null; then continue; fi
   if [ "${#ONLY[@]}" -gt 0 ]; then
     keep=0; for o in "${ONLY[@]}"; do [ "$o" = "$n" ] && keep=1; done
     [ "$keep" = 1 ] || continue
