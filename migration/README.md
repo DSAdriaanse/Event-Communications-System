@@ -3,12 +3,12 @@
 Only needed when bringing data over from the old Base44 deployment. Safe to delete afterwards.
 
 Put the CSV files exported from the Base44 dashboard (`Event_export.csv`, `Operator_export.csv`, ...) in
-`migration/base44-export/` (git-ignored: it contains personal data) and either pass the folder to the
-bootstrap script (`--import-dir`) or run the importer by hand:
+`migration/base44-export/` (git-ignored: it contains personal data) and run the importer from any computer with Node 18 or
+later (the installer no longer runs it for you):
 
 ```bash
 node migration/import-base44.mjs --dir migration/base44-export \
-     --url http://127.0.0.1:8090 --email <superuser> --password '<password>'
+     --url https://ecs.example.org --email <superuser> --password '<password>' --dry-run   # then without --dry-run
 ```
 
 * Original record ids and created/updated timestamps are preserved, so all references stay valid.

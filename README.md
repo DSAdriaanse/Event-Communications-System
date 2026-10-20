@@ -10,69 +10,45 @@ A **self-hosted, single-binary stack on PocketBase**:
 | Server logic | JavaScript hooks in `pocketbase/pb_hooks` (PIN login, reports, ICS e-mail, export/import, APRS.fi poller) |
 | Schema | `pocketbase/pb_migrations` (applied automatically on start) |
 | UI | React/Vite app in `app/`, talking to PocketBase through `app/src/api/ecs.js` |
-| Ops | `deploy/bootstrap.sh` (Debian/Ubuntu), 
+| Ops | `deploy/` (Debian/Ubuntu): guided installer, `ecs-update`, backups, removal. See `docs/deployment.md` |
 
 ## Install on a Debian / Ubuntu server
 
-```bash
-git clone https://github.com/DSAdriaanse/event_communications_system.git
-cd event_communications_system
-sudo ./deploy/bootstrap.sh --domain ecs.example.org          # with nginx/Caddy site
-sudo ./deploy/bootstrap.sh                                    # plain, no proxy (LAN)
-```
-
-### Deploying from a private/deploy-key clone (typical server flow)
+On your own computer, copy the installer to the server and run it:
 
 ```bash
-GIT_SSH_COMMAND="ssh -i /root/.ssh/ecs-deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
-  git clone -b main git@github.com:DSAdriaanse/event_communications_system.git /opt/ecs-src
-
-bash /opt/ecs-src/deploy/bootstrap.sh --branch main \
-  --domain ecs.apps.swcrs.org --email you@example.org --superuser-email you@example.org
+scp deploy/bootstrap.sh root@your-server:
+ssh root@your-server
+bash bootstrap.sh
 ```
-With `--domain` and `--email` the script also sets up nginx and a Let's Encrypt certificate (`--no-certbot` to skip).
-To upgrade later: `git -C /opt/ecs-src pull` (same `GIT_SSH_COMMAND`), then re-run the same bootstrap line.
-Keep the clone (`/opt/ecs-src`) separate from the install (`/opt/ecs`).
 
-The script is idempotent: running it again upgrades code and keeps data, PINs and credentials.
-It prints the URL, the admin PIN and where the PocketBase superuser credentials are stored
-(`/etc/<instance>/credentials.txt`, root only).
+It asks a few questions (hostname, whether Nginx runs here or on another machine, a port, a contact email for the certificate,
+the git branch), shows a plan, and waits for a yes before changing anything. Every question also has an option, so it runs
+unattended with `--yes`; `--dry-run` only prints the plan.
 
-### Coexisting with other PocketBase instances
-
-Everything is namespaced by `--instance` (default `ecs`):
-
-| Thing | Value |
-|---|---|
-| System user / systemd unit | `<instance>` / `<instance>.service` |
-| Code, binary, data | `/opt/<instance>/{src,bin,data}` (own PocketBase binary, nothing shared) |
-| Config / secrets | `/etc/<instance>/` |
-| TCP port | first free port from 8090 up; ports configured in other systemd units are skipped too (`--port` to force) |
-| Reverse proxy | only its own `sites-available/<instance>.conf` (nginx, validated with `nginx -t`, removed again if invalid) or `/etc/caddy/conf.d/<instance>.caddy`; existing sites and Caddyfiles are never edited |
-| Node.js | system Node ≥ 18 if present, otherwise an isolated tarball under `/opt/<instance>/.build` (only for building) |
-
-A second suite on the same host: `sudo ./deploy/bootstrap.sh --instance ecs-demo --domain demo.example.org`.
-
-### Common options
-
+```bash
+bash bootstrap.sh --yes --domain ecs.example.org --email you@example.org      # Nginx + TLS on this server
+bash bootstrap.sh --yes --domain ecs.example.org --mode proxy --listen 10.0.0.9 --proxy-ip 10.0.0.5   # your own reverse proxy
 ```
---domain HOST --proxy nginx|caddy|none --certbot   public host name, proxy, Let's Encrypt
---import-dir DIR                                    legacy import from an old Base44 CSV export (default: migration/base44-export if present)
---smtp-host H --smtp-port P --smtp-user U --smtp-pass PW [--smtp-tls]   e-mail for bulletins/ICS forms
---aprs-key KEY                                      aprs.fi position polling
---admin-pin PIN  --superuser-email E --superuser-password PW
---no-systemd                                        run as current user in the background (testing / containers)
---uninstall [--purge]                               remove service and proxy site (--purge also data, user, config)
-```
-`./deploy/bootstrap.sh --help` lists everything.
 
-PocketBase is downloaded from GitHub releases (pinned `0.40.5`, override with `--pb-version`); if GitHub is not
-reachable the script falls back to the `pocketbase-bin` wheel on PyPI.
+When it finishes you have PocketBase, the app, systemd, a firewall, hourly backups, and Nginx with TLS (or a ready-to-paste proxy
+config). It prints the PocketBase superuser login and the first admin PIN once. Save them. Update later with `ecs-update`
+(it backs up, health-checks, and rolls back if the new version does not start).
+
+Everything is named after `--name` (default `ecs`), so a second copy, or another app built the same way, can share the server.
+The full guide (proxy mode, second instance, ports, backups and restore, moving from the old installer, manual install) is in
+[`docs/deployment.md`](docs/deployment.md). Pass `--smtp-*`, `--aprs-key`, `--mail-from-*` and `--admin-pin` to set those up
+during install.
+
+Behind a proxy the installer sets PocketBase's trusted-proxy header (`X-Forwarded-For`) so the PIN-login throttling sees real client
+addresses. The supplied proxy config sets that header to the connecting address and never appends to it.
+
+To remove instances later: `bash deploy/uninstall-instances.sh` lists every instance on the server and removes the ones you pick.
 
 ## Importing data from the legacy Base44 deployment (optional, one time)
 
-See [`migration/README.md`](migration/README.md). Place the exported CSVs in `migration/base44-export/` (git-ignored)
-and bootstrap picks them up, or run `node migration/import-base44.mjs` later. Ids and timestamps are preserved.
+See [`migration/README.md`](migration/README.md). Place the exported CSVs in `migration/base44-export/` (git-ignored) and run
+the importer from any computer with Node 18 or later. Ids and timestamps are preserved.
 
 ## How it works
 
@@ -97,7 +73,7 @@ Bulletins and ICS forms are sent with PocketBase's mailer (**Settings → Mail s
 Without SMTP the UI reports that mail is not configured; nothing else is affected.
 
 ### APRS.fi
-Set `APRS_FI_API_KEY` in `/etc/<instance>/<instance>.env` and restart the unit. A cron job polls every 5 minutes.
+Set `APRS_FI_API_KEY` in `/etc/<name>/env` (or pass `--aprs-key` to the installer) and restart the service. A cron job polls every 5 minutes.
 
 ### Map tiles
 The map uses CARTO dark tiles, which need internet access on the client devices. For offline events build the UI with
@@ -106,12 +82,13 @@ The map uses CARTO dark tiles, which need internet access on the client devices.
 ## Operations
 
 ```bash
-systemctl status <instance>            # service state
-journalctl -u <instance> -f            # logs
-sudo ./deploy/bootstrap.sh             # upgrade to the checked-out version
+systemctl status ecs            # service state (the name is whatever you gave --name)
+journalctl -u ecs -f            # logs
+ecs-update                      # upgrade: pull, build, back up, restart, health check, roll back if unhealthy
 ```
-**Backups:** copy `/opt/<instance>/data/pb_data` (stop the service or use `/_/` → Settings → Backups). It contains
-everything, including PINs in clear text (as in the original).
+**Backups:** taken hourly into `/var/backups/<name>` (kept 14 days) and before every update; copy that folder off the
+machine. Restore steps are in [`docs/deployment.md`](docs/deployment.md). The database holds everything, including PINs in
+clear text (as in the original), so treat backups as secrets.
 
 ## Development
 
