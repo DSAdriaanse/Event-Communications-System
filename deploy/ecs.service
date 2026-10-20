@@ -1,0 +1,31 @@
+# Template: server.sh fills in the __NAME__, __USER__, __APP__, __DATA__ and __ENV_FILE__ placeholders.
+# --indexFallback serves the single-page app for every route (the UI has its own router).
+[Unit]
+Description=__NAME__ (PocketBase)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=__USER__
+Group=__USER__
+WorkingDirectory=__APP__
+EnvironmentFile=__ENV_FILE__
+ExecStart=__APP__/pocketbase serve \
+  --http ${PW_LISTEN}:${PW_PORT} \
+  --dir __DATA__/pb_data \
+  --migrationsDir __APP__/pb_migrations \
+  --hooksDir __APP__/pb_hooks \
+  --publicDir __APP__/dist \
+  --indexFallback=true
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=4096
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=__DATA__
+
+[Install]
+WantedBy=multi-user.target

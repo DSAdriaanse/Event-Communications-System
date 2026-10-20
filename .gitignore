@@ -8,5 +8,5 @@ pb_data/
 *.log
 .env
 .env.*
-!deploy/ecs.env.example
+!.env.example
 .DS_Store

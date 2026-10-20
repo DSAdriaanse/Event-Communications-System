@@ -1,505 +1,356 @@
 #!/usr/bin/env bash
-# ECS (Event Communications System) - bootstrap for a blank (or shared) Debian/Ubuntu server.
+# Guided installer for a fresh Debian server. Copy this single file to the server and run it as root:
 #
-#   sudo ./deploy/bootstrap.sh [options]
-#   curl -fsSL https://raw.githubusercontent.com/DSAdriaanse/event_communications_system/main/deploy/bootstrap.sh | sudo bash -s -- [options]
+#   scp deploy/bootstrap.sh root@your-server:
+#   ssh root@your-server
+#   bash bootstrap.sh
 #
-# Safe to run next to other PocketBase instances: everything is namespaced by --instance
-# (own user, own systemd unit, own /opt/<instance> + /etc/<instance> directories, own free TCP port).
-# It never touches another service, another user or a foreign proxy site. Re-running upgrades the code
-# and keeps the data, PINs and credentials.
+# Run with no options and it asks what it needs: the public hostname, how people reach the app
+# (Nginx on this server, or an external reverse proxy), a local port (it suggests the first free one
+# from 8090), contact emails and the Git branch. It shows a summary and waits for a yes before
+# changing anything. Every question has an option, so it also runs unattended:
 #
-# Options (all optional):
-#   --instance NAME          instance name; user/unit/dirs derive from it        [ecs]
-#   --port N                 TCP port; default: first free port from 8090 up, skipping ports other units use
-#   --listen ADDR            bind address; default 127.0.0.1 with a proxy/domain, else 0.0.0.0
-#   --domain HOST            public host name; adds a reverse-proxy site for it (see --proxy)
-#   --proxy nginx|caddy|none reverse proxy to configure for --domain            [auto-detect]
-#   --email ADDR             contact for Let's Encrypt; with --domain this turns on HTTPS (certbot) for nginx
-#   --no-certbot             skip the certificate even when --email is given
-#   --certbot                request a Let's Encrypt certificate (no --email: registers without one)
-#   --admin-pin PIN          initial ECS admin PIN (blank database only)         [random 6 digits]
-#   --superuser-email MAIL   PocketBase superuser                                 [admin@<instance>.local]
-#   --superuser-password PW  PocketBase superuser password                        [random]
-#   --import-dir DIR         legacy import: folder of *_export.csv files from the old Base44 app [migration/base44-export if present]
-#   --no-import              do not import anything
-#   --import-admin-pin       also import the legacy admin PIN (default: keep the new one)
-#   --smtp-host H --smtp-port P --smtp-user U --smtp-pass PW [--smtp-tls]   e-mail via your SMTP server
-#   --mail-from-name N --mail-from-address A
-#   --aprs-key KEY           aprs.fi API key for position polling
-#   --branch NAME (--ref)    branch/tag to fetch when not run from a checkout; warns if a checkout is on another branch
-#   --repo URL               where to fetch the code when not run from a checkout
-#   --install-dir DIR        override /opt/<instance>
-#   --pb-version V           PocketBase version                                   [0.40.5]
-#   --no-systemd             no user/unit: run as the current user in the background (testing, containers)
-#   --uninstall [--purge]    stop and remove the service/proxy site; --purge also deletes data, user and config
-#   -y, --yes                never prompt
+#   bash bootstrap.sh --yes --domain ecs.apps.swcrs.org --email you@example.org --superuser-email you@example.org
+#   bash bootstrap.sh --yes --domain ecs.apps.swcrs.org --mode proxy --listen 10.0.0.9 --proxy-ip 10.0.0.5
 #
-set -Eeuo pipefail
-# root shells entered with plain `su` lack the sbin dirs (useradd, runuser, nginx live there)
+# Options:
+#   --domain <host>          public hostname people will visit
+#   --mode local|proxy       local: Nginx and a TLS certificate on this server (default)
+#                            proxy: an external reverse proxy handles TLS; this server only runs the app
+#   --email <addr>           contact address for the TLS certificate (local mode)
+#   --superuser-email <addr> PocketBase admin login to create (optional)
+#   --port <n>               local port the app listens on (default: first free port from 8090)
+#   --listen <ipv4>          proxy mode: address the app listens on (default: this server's main address)
+#   --proxy-ip <ip[,ip...]>  proxy mode: address or range of the proxy allowed through the firewall,
+#                            or "none" if you manage the firewall elsewhere
+#   --name <name>            instance name (default ecs). Everything is named after it: the service, the
+#                            folders /opt/<name> and /var/lib/<name>, /etc/<name>, the Nginx site, the service user, the
+#                            backup job, and the update command <name>-update. Use it to run a second copy
+#                            (or another app built the same way) on one server.
+#   --branch <name>          Git branch to install (default main)
+#   --repo <url>             Git repository (default the public ECS repo over HTTPS; use git@github.com:owner/repo.git for a private copy)
+#   --admin-pin <pin>        first admin PIN of the app (default: random 6 digits, shown once)
+#   --aprs-key <key>         aprs.fi API key for position polling
+#   --mail-from-name <n>     sender name on e-mails            --mail-from-address <a>   sender address
+#   --smtp-host <h> --smtp-port <p> --smtp-user <u> --smtp-pass <pw> [--smtp-tls]   e-mail through your SMTP server
+#                            (or set it later in the PocketBase admin under Settings > Mail settings)
+#   --yes                    do not ask anything; use defaults for what is not given, fail if a required value is missing
+#   --dry-run                ask the questions, show the plan, and change nothing
+#
+# It installs Node, gets the code from your private GitHub repo using a read-only deploy key, builds it,
+# and sets up PocketBase, systemd, the firewall and backups (plus Nginx and TLS in local mode).
+# Re-running is safe. Afterwards, update with:  ecs-update   (or <name>-update)
+set -euo pipefail
 export PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin"
 
-# ------------------------------------------------------------------ defaults
-INSTANCE=ecs
-PORT=""
-LISTEN=""
-DOMAIN=""
-PROXY=""
-CERTBOT=0
-NO_CERTBOT=0
-LE_EMAIL=""
-ADMIN_PIN=""
-SU_EMAIL=""
-SU_PASS=""
-IMPORT_DIR=""
-NO_IMPORT=0
-IMPORT_ADMIN_PIN=0
-SMTP_HOST="" SMTP_PORT=587 SMTP_USER="" SMTP_PASS="" SMTP_TLS=0
-MAIL_NAME="" MAIL_ADDR=""
-APRS_KEY=""
-REPO_URL="https://github.com/DSAdriaanse/event_communications_system.git"
-REF="main"
-INSTALL_DIR=""
-PB_VERSION="${PB_VERSION:-0.40.5}"
-NODE_VERSION="${NODE_VERSION:-22.22.0}"
-NO_SYSTEMD=0
-UNINSTALL=0
-PURGE=0
-ASSUME_YES=0
+REPO=${REPO:-https://github.com/DSAdriaanse/event_communications_system.git}
+BRANCH=${BRANCH:-}
+NAME=${NAME:-ecs}
+# Every path is named after the instance. SRC, ENV_FILE and CONF can still be overridden from the environment.
+_SRC=${SRC:-}; _ENV_FILE=${ENV_FILE:-}; _CONF=${CONF:-}
+derive_paths() {
+  SRC=${_SRC:-/opt/$NAME-src}
+  KEY=/root/.ssh/$NAME-deploy
+  ENV_FILE=${_ENV_FILE:-/etc/$NAME/env}
+  CONF=${_CONF:-/etc/$NAME/update.conf}
+}
+derive_paths
+DOMAIN=; EMAIL=; SU_EMAIL=; PORT=; MODE=; LISTEN=; PROXY_IPS=
+ADMIN_PIN=; APRS_KEY=; MAIL_NAME=; MAIL_ADDR=; SMTP_HOST=; SMTP_PORT=; SMTP_USER=; SMTP_PASS=; SMTP_TLS=0
+YES=0; DRY_RUN=0
 
-log()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
-die()  { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; exit 1; }
-TMPS=()
-cleanup() { for d in "${TMPS[@]:-}"; do if [ -n "$d" ]; then rm -rf "$d"; fi; done; return 0; }
-trap cleanup EXIT
-trap 'die "failed at line $LINENO (command: $BASH_COMMAND)"' ERR
+say() { printf '\n==> %s\n' "$*"; }
+die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
-usage() { sed -n '2,38p' "${BASH_SOURCE[0]:-$0}" | sed 's/^# \{0,1\}//'; exit 0; }
+# ---------------------------------------------------------------- reading what is already installed
+env_value() { [ -f "$ENV_FILE" ] && sed -n "s/^$1=//p" "$ENV_FILE" | head -1 || true; }
+saved_branch() { [ -f "$CONF" ] && sed -n 's/^BRANCH=//p' "$CONF" | head -1 || true; }
+existing_port() { env_value PW_PORT; }
+
+# ---------------------------------------------------------------- network helpers
+port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+primary_ip() {
+  local addr
+  addr=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit }}')
+  [ -n "$addr" ] || addr=$(hostname -I 2>/dev/null | awk '{print $1}')
+  echo "$addr"
+}
+# Suggested listen address for proxy mode: the one already saved (if it is not localhost), else this server's main address.
+suggest_listen() {
+  local saved; saved=$(env_value PW_LISTEN)
+  case "$saved" in ""|127.*) primary_ip ;; *) echo "$saved" ;; esac
+}
+# Suggested port: the one this install already uses, else the first free port from 8090 up.
+suggest_port() {
+  local p; p=$(existing_port)
+  if [ -n "$p" ]; then echo "$p"; return; fi
+  p=8090
+  while port_in_use "$p"; do p=$((p + 1)); done
+  echo "$p"
+}
+
+# ---------------------------------------------------------------- validators
+# Each prints a reason and returns 1 when the value is not acceptable.
+is_ipv4() {
+  local IFS=. o; local -a parts=($1)
+  [ "${#parts[@]}" -eq 4 ] || return 1
+  for o in "${parts[@]}"; do [[ "$o" =~ ^[0-9]{1,3}$ ]] && [ "$o" -le 255 ] || return 1; done
+}
+is_ip_or_range() {   # IPv4 or IPv6 address, with an optional /prefix
+  local addr=${1%%/*} mask=
+  if [[ "$1" == */* ]]; then mask=${1#*/}; [ -n "$mask" ] || return 1; fi
+  if is_ipv4 "$addr"; then
+    [ -z "$mask" ] || { [[ "$mask" =~ ^[0-9]{1,2}$ ]] && [ "$mask" -le 32 ]; }
+  elif [[ "$addr" == *:* && "$addr" =~ ^[0-9A-Fa-f:]+$ ]]; then
+    [ -z "$mask" ] || { [[ "$mask" =~ ^[0-9]{1,3}$ ]] && [ "$mask" -le 128 ]; }
+  else
+    return 1
+  fi
+}
+v_name() { [[ "$1" =~ ^[a-z][a-z0-9-]{0,23}$ ]] || { echo "'$1' is not a valid name. Use 1 to 24 characters: lowercase letters, digits and dashes, starting with a letter."; return 1; }; }
+v_nonempty() { [ -n "$1" ] || { echo "A value is required."; return 1; }; }
+v_any() { return 0; }
+v_domain() { [[ "$1" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || { echo "'$1' does not look like a hostname or IP address."; return 1; }; }
+v_email() { [[ "$1" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || { echo "'$1' does not look like an email address."; return 1; }; }
+v_optional_email() { [ -z "$1" ] || v_email "$1"; }
+v_listen() { is_ipv4 "$1" || { echo "'$1' is not an IPv4 address (use 0.0.0.0 to listen on all addresses)."; return 1; }; }
+v_proxy_ips() {
+  [ -n "$1" ] || { echo "A value is required. Use an address like 10.0.0.5, a range like 10.0.0.0/24, or 'none'."; return 1; }
+  [ "$1" = none ] && return 0
+  local item; local IFS=,
+  for item in $1; do
+    item=${item// /}
+    is_ip_or_range "$item" || { echo "'$item' is not an IP address or range (example: 10.0.0.5 or 10.0.0.0/24)."; return 1; }
+  done
+}
+v_port() {
+  [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1024 ] && [ "$1" -le 65535 ] || { echo "'$1' is not a valid port. Use a number from 1024 to 65535."; return 1; }
+  [ "$1" = "$(existing_port)" ] || ! port_in_use "$1" || { echo "Port $1 is already in use on this server."; return 1; }
+}
+valid_port() { [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1024 ] && [ "$1" -le 65535 ]; }
+
+# ---------------------------------------------------------------- asking
+prompting() { [ "$YES" != 1 ] && [ -t 0 ]; }
+
+# ask VAR "Question" "default" validator
+# Uses the value already in VAR (from an option) if there is one. Otherwise asks, when run from a terminal
+# without --yes, and falls back to the default. A value that fails the check is asked for again, or
+# stops the script when there is nobody to ask.
+ask() {
+  local var=$1 question=$2 def=$3 check=$4 val msg
+  while true; do
+    val=${!var}
+    if [ -z "$val" ]; then
+      if prompting; then
+        if [ -n "$def" ]; then read -r -p "$question [$def]: " val </dev/tty; val=${val:-$def}
+        else read -r -p "$question: " val </dev/tty; fi
+      else
+        val=$def
+      fi
+    fi
+    if msg=$("$check" "$val"); then printf -v "$var" '%s' "$val"; return 0; fi
+    prompting || die "$question: $msg (pass it as an option, or run without --yes to be asked)"
+    printf '%s\n' "$msg" >&2
+    printf -v "$var" '%s' ''
+  done
+}
+
+ask_mode() {
+  case "$MODE" in 1) MODE=local ;; 2) MODE=proxy ;; local|proxy|"") ;; *) die "--mode must be 'local' or 'proxy'" ;; esac
+  [ -z "$MODE" ] || return 0
+  local saved a def=1; saved=$(env_value PW_MODE); [ "$saved" = proxy ] && def=2
+  if prompting; then
+    cat >&2 <<'TXT'
+
+How will people reach the app?
+  1) Nginx on this server. Installs Nginx and a free TLS certificate here.
+  2) An external reverse proxy (Nginx on another machine). It handles TLS; this server only runs the app.
+TXT
+    while true; do
+      read -r -p "Choose 1 or 2 [$def]: " a </dev/tty; a=${a:-$def}
+      case "$a" in 1) MODE=local; return 0 ;; 2) MODE=proxy; return 0 ;; *) echo "Please enter 1 or 2." >&2 ;; esac
+    done
+  fi
+  MODE=${saved:-local}
+}
+
+choose_port() {
+  ask PORT "Local port for the app$([ "$MODE" = proxy ] && echo ' (the proxy connects to it)' || echo ' (Nginx forwards to it; not opened to the internet)')" "$(suggest_port)" v_port
+}
+
+# Lets tests load the functions above without running the installer.
+[ "${BOOTSTRAP_SOURCE_ONLY:-}" = 1 ] && return 0
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --instance) INSTANCE="$2"; shift 2;;
-    --port) PORT="$2"; shift 2;;
-    --listen) LISTEN="$2"; shift 2;;
-    --domain) DOMAIN="$2"; shift 2;;
-    --proxy) PROXY="$2"; shift 2;;
-    --certbot) CERTBOT=1; shift;;
-    --no-certbot) NO_CERTBOT=1; shift;;
-    --email) LE_EMAIL="$2"; shift 2;;
-    --admin-pin) ADMIN_PIN="$2"; shift 2;;
-    --superuser-email) SU_EMAIL="$2"; shift 2;;
-    --superuser-password) SU_PASS="$2"; shift 2;;
-    --import-dir) IMPORT_DIR="$2"; shift 2;;
-    --no-import) NO_IMPORT=1; shift;;
-    --import-admin-pin) IMPORT_ADMIN_PIN=1; shift;;
-    --smtp-host) SMTP_HOST="$2"; shift 2;;
-    --smtp-port) SMTP_PORT="$2"; shift 2;;
-    --smtp-user) SMTP_USER="$2"; shift 2;;
-    --smtp-pass) SMTP_PASS="$2"; shift 2;;
-    --smtp-tls) SMTP_TLS=1; shift;;
-    --mail-from-name) MAIL_NAME="$2"; shift 2;;
-    --mail-from-address) MAIL_ADDR="$2"; shift 2;;
-    --aprs-key) APRS_KEY="$2"; shift 2;;
-    --repo) REPO_URL="$2"; shift 2;;
-    --ref|--branch) REF="$2"; shift 2;;
-    --install-dir) INSTALL_DIR="$2"; shift 2;;
-    --pb-version) PB_VERSION="$2"; shift 2;;
-    --no-systemd) NO_SYSTEMD=1; shift;;
-    --uninstall) UNINSTALL=1; shift;;
-    --purge) PURGE=1; shift;;
-    -y|--yes) ASSUME_YES=1; shift;;
-    -h|--help) usage;;
-    *) die "unknown option: $1 (see --help)";;
+    --domain) DOMAIN=$2; shift 2 ;;
+    --mode) MODE=$2; shift 2 ;;
+    --email) EMAIL=$2; shift 2 ;;
+    --superuser-email) SU_EMAIL=$2; shift 2 ;;
+    --port) PORT=$2; shift 2 ;;
+    --listen) LISTEN=$2; shift 2 ;;
+    --proxy-ip) PROXY_IPS=$2; shift 2 ;;
+    --name) NAME=$2; shift 2 ;;
+    --admin-pin) ADMIN_PIN=$2; shift 2 ;;
+    --aprs-key) APRS_KEY=$2; shift 2 ;;
+    --mail-from-name) MAIL_NAME=$2; shift 2 ;;
+    --mail-from-address) MAIL_ADDR=$2; shift 2 ;;
+    --smtp-host) SMTP_HOST=$2; shift 2 ;;
+    --smtp-port) SMTP_PORT=$2; shift 2 ;;
+    --smtp-user) SMTP_USER=$2; shift 2 ;;
+    --smtp-pass) SMTP_PASS=$2; shift 2 ;;
+    --smtp-tls) SMTP_TLS=1; shift ;;
+    --branch) BRANCH=$2; shift 2 ;;
+    --repo) REPO=$2; shift 2 ;;
+    --yes|-y) YES=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option: $1 (see --help)" >&2; exit 2 ;;
   esac
 done
+msg=$(v_name "$NAME") || die "--name: $msg"
+derive_paths
+if [ "$DRY_RUN" != 1 ]; then
+  [ "$(id -u)" = 0 ] || die "run as root"
+  [ -r /etc/debian_version ] || die "this script is for Debian/Ubuntu"
+fi
 
-[[ "$INSTANCE" =~ ^[a-z][a-z0-9-]{0,30}$ ]] || die "--instance must be lowercase letters, digits and dashes (max 31 chars)"
-[ "$(id -u)" -eq 0 ] || [ "$NO_SYSTEMD" -eq 1 ] || die "run as root (sudo), or use --no-systemd for an unprivileged test install"
+# ---------------------------------------------------------------- questions
+if prompting; then printf '\nECS (Event Communications System) installer. Press Enter to accept the value in [brackets].\n\n' >&2; fi
+saved_host=$(env_value APP_URL); saved_host=${saved_host#http://}; saved_host=${saved_host#https://}; saved_host=${saved_host%%/*}
+ask DOMAIN "Public hostname people will visit (for example ecs.apps.swcrs.org)" "$saved_host" v_domain
+ask_mode
+if [ "$MODE" = local ]; then
+  ask EMAIL "Email for TLS certificate notices (Let's Encrypt)" "" v_email
+  LISTEN=127.0.0.1
+  PROXY_IPS=
+else
+  EMAIL=
+fi
+ask SU_EMAIL "Email for the PocketBase admin login (Enter for admin@$NAME.local, first install only)" "" v_optional_email
+choose_port
+if [ "$MODE" = proxy ]; then
+  ask LISTEN "Address this server listens on for the proxy (0.0.0.0 = all addresses)" "$(suggest_listen)" v_listen
+  ask PROXY_IPS "IP address or range of the proxy allowed to connect (10.0.0.5, 10.0.0.0/24, comma separated, or 'none')" "$(env_value PW_PROXY_IPS)" v_proxy_ips
+fi
+ask BRANCH "Git branch to install" "$(saved_branch || true)" v_any
+BRANCH=${BRANCH:-main}
 
-SVC_USER="$INSTANCE"
-SERVICE="$INSTANCE"
-[ -n "$INSTALL_DIR" ] || INSTALL_DIR="/opt/$INSTANCE"
-if [ "$NO_SYSTEMD" -eq 1 ] && [ "$(id -u)" -ne 0 ]; then CONF_DIR="$INSTALL_DIR/etc"; else CONF_DIR="/etc/$INSTANCE"; fi
-[ "$NO_SYSTEMD" -eq 1 ] && [ -n "${ECS_CONF_DIR:-}" ] && CONF_DIR="$ECS_CONF_DIR"
-STATE_FILE="$CONF_DIR/instance.conf"
-ENV_FILE="$CONF_DIR/$INSTANCE.env"
-CRED_FILE="$CONF_DIR/credentials.txt"
-UNIT_FILE="/etc/systemd/system/$SERVICE.service"
-NGINX_SITE="/etc/nginx/sites-available/$INSTANCE.conf"
-NGINX_LINK="/etc/nginx/sites-enabled/$INSTANCE.conf"
-CADDY_SITE="/etc/caddy/conf.d/$INSTANCE.caddy"
+args=(--branch "$BRANCH" --setup --domain "$DOMAIN" --mode "$MODE" --port "$PORT")
+[ "$MODE" = local ] && args+=(--email "$EMAIL")
+[ -n "$SU_EMAIL" ] && args+=(--superuser-email "$SU_EMAIL")
+[ "$MODE" = proxy ] && args+=(--listen "$LISTEN" --proxy-ip "$PROXY_IPS")
+[ -n "$ADMIN_PIN" ] && args+=(--admin-pin "$ADMIN_PIN")
+[ -n "$APRS_KEY" ] && args+=(--aprs-key "$APRS_KEY")
+[ -n "$MAIL_NAME" ] && args+=(--mail-from-name "$MAIL_NAME")
+[ -n "$MAIL_ADDR" ] && args+=(--mail-from-address "$MAIL_ADDR")
+if [ -n "$SMTP_HOST" ]; then
+  args+=(--smtp-host "$SMTP_HOST" --smtp-port "${SMTP_PORT:-587}")
+  [ -n "$SMTP_USER" ] && args+=(--smtp-user "$SMTP_USER")
+  [ -n "$SMTP_PASS" ] && args+=(--smtp-pass "$SMTP_PASS")
+  [ "$SMTP_TLS" = 1 ] && args+=(--smtp-tls)
+fi
 
-SCRIPT_PATH="${BASH_SOURCE[0]:-}"
-SCRIPT_DIR=""
-[ -n "$SCRIPT_PATH" ] && [ -f "$SCRIPT_PATH" ] && SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
-
-have() { command -v "$1" >/dev/null 2>&1; }
-rand_alnum() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1" || true; }
-rand_digits() { LC_ALL=C tr -dc '0-9' </dev/urandom | head -c "$1" || true; }
-
-# ------------------------------------------------------------------ uninstall
-if [ "$UNINSTALL" -eq 1 ]; then
-  [ -f "$STATE_FILE" ] || die "no ECS instance '$INSTANCE' found (missing $STATE_FILE) - refusing to remove anything"
-  log "Uninstalling instance '$INSTANCE'"
-  if [ "$NO_SYSTEMD" -eq 0 ]; then
-    systemctl disable --now "$SERVICE.service" 2>/dev/null || true
-    rm -f "$UNIT_FILE"; systemctl daemon-reload || true
-  elif [ -f "$INSTALL_DIR/run/pb.pid" ]; then
-    kill "$(cat "$INSTALL_DIR/run/pb.pid")" 2>/dev/null || true
-  fi
-  if [ -f "$NGINX_SITE" ] && grep -q "managed by deploy/bootstrap.sh" "$NGINX_SITE"; then
-    rm -f "$NGINX_LINK" "$NGINX_SITE"; nginx -t 2>/dev/null && systemctl reload nginx || true
-  fi
-  if [ -f "$CADDY_SITE" ] && grep -q "managed by deploy/bootstrap.sh" "$CADDY_SITE"; then
-    rm -f "$CADDY_SITE"; systemctl reload caddy 2>/dev/null || true
-  fi
-  if [ "$PURGE" -eq 1 ]; then
-    rm -rf "$INSTALL_DIR" "$CONF_DIR"
-    id "$SVC_USER" >/dev/null 2>&1 && userdel "$SVC_USER" 2>/dev/null || true
-    log "Purged $INSTALL_DIR and $CONF_DIR"
+{
+  printf '\nInstallation plan\n'
+  if [ -f "$ENV_FILE" ]; then printf '  Instance name     %s (already installed here: this updates it in place; to add another copy, use --name)\n' "$NAME"
+  else printf '  Instance name     %s\n' "$NAME"; fi
+  printf '  Public hostname   %s\n' "$DOMAIN"
+  if [ "$MODE" = local ]; then
+    printf '  Web access        Nginx on this server, TLS certificate for %s via Let'"'"'s Encrypt\n' "$EMAIL"
   else
-    log "Service removed. Data kept in $INSTALL_DIR/data (use --purge to delete it)."
+    printf '  Web access        external reverse proxy (it handles TLS and Nginx is not installed here)\n'
+    printf '  App listens on    %s:%s\n' "$LISTEN" "$PORT"
+    if [ "$PROXY_IPS" = none ]; then printf '  Firewall          no rule added for the proxy (you manage it)\n'
+    else printf '  Firewall          allow %s to reach port %s\n' "$PROXY_IPS" "$PORT"; fi
   fi
+  [ "$MODE" = local ] && printf '  App port          %s (local only)\n' "$PORT"
+  printf '  Git branch        %s\n' "$BRANCH"
+  printf '  PocketBase admin  %s\n' "${SU_EMAIL:-admin@$NAME.local (created on a first install)}"
+  printf '\n'
+} >&2
+
+if [ "$DRY_RUN" = 1 ]; then
+  printf 'Dry run, nothing was changed. The install would run:\n  %s' "$NAME-update" >&2
+  printf ' %q' "${args[@]}" >&2; printf '\n' >&2
   exit 0
 fi
-
-# ------------------------------------------------------------------ existing install?
-RERUN=0
-if [ -f "$STATE_FILE" ]; then
-  RERUN=1
-  _p="$PORT"; _l="$LISTEN"; _d="$DOMAIN"; _x="$PROXY"
-  # shellcheck disable=SC1090
-  . "$STATE_FILE"                      # PORT, LISTEN, DOMAIN, PROXY of the first run ...
-  [ -z "$_p" ] || PORT="$_p"; [ -z "$_l" ] || LISTEN="$_l"; [ -z "$_d" ] || DOMAIN="$_d"; [ -z "$_x" ] || PROXY="$_x"   # ... unless given again
-  log "Existing instance '$INSTANCE' found: upgrading in place (data is kept)"
-elif [ -e "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
-  die "$INSTALL_DIR already exists and is not an ECS instance created by this script. Use --instance or --install-dir."
-elif [ "$NO_SYSTEMD" -eq 0 ] && { [ -e "$UNIT_FILE" ] || id "$SVC_USER" >/dev/null 2>&1; }; then
-  die "A systemd unit or user named '$INSTANCE' already exists and isn't ours. Pick another --instance."
+if prompting; then
+  read -r -p "Continue? [Y/n] " a </dev/tty
+  case "${a:-y}" in n|N|no|NO) die "Cancelled. Nothing was changed." ;; esac
 fi
 
-# ------------------------------------------------------------------ prerequisites
-OS_OK=0
-if [ -r /etc/os-release ]; then . /etc/os-release; case "${ID:-}${ID_LIKE:-}" in *debian*|*ubuntu*) OS_OK=1;; esac; fi
-[ "$OS_OK" -eq 1 ] || warn "This script targets Debian/Ubuntu; continuing anyway."
+say "Base packages"
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq git curl ca-certificates openssh-client xz-utils openssl >/dev/null
 
-need_pkgs=()
-for t in curl:curl unzip:unzip tar:tar git:git; do have "${t%%:*}" || need_pkgs+=("${t##*:}"); done
-have ss || need_pkgs+=(iproute2)
-[ -d /etc/ssl/certs ] || need_pkgs+=(ca-certificates)
-if [ "${#need_pkgs[@]}" -gt 0 ]; then
-  have apt-get || die "missing tools (${need_pkgs[*]}) and no apt-get available"
-  log "Installing prerequisites: ${need_pkgs[*]}"
-  DEBIAN_FRONTEND=noninteractive apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${need_pkgs[@]}" ca-certificates
-fi
-
-case "$(uname -m)" in
-  x86_64|amd64) PB_ARCH=amd64; NODE_ARCH=x64;;
-  aarch64|arm64) PB_ARCH=arm64; NODE_ARCH=arm64;;
-  *) die "unsupported CPU architecture: $(uname -m)";;
-esac
-
-[ -z "$SU_EMAIL" ] && [ -n "$LE_EMAIL" ] && SU_EMAIL="$LE_EMAIL"
-[ -n "$DOMAIN" ] && [ -n "$LE_EMAIL" ] && [ "$NO_CERTBOT" -eq 0 ] && CERTBOT=1
-# ------------------------------------------------------------------ port selection
-reserved_ports() {
-  # ports currently listening ...
-  ss -Hltn 2>/dev/null | awk '{n=split($4,a,":"); print a[n]}'
-  # ... and ports other (possibly stopped) services are configured for
-  grep -rhoE -- '--http[= ]+[^ ]*:[0-9]+' /etc/systemd/system /lib/systemd/system /usr/lib/systemd/system 2>/dev/null \
-    | grep -oE '[0-9]+$' || true
+ensure_node() {
+  if command -v node >/dev/null && [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 22 ]; then
+    say "Node $(node -v) already installed"; return
+  fi
+  say "Installing Node 22 (latest v22 from nodejs.org, checksum verified)"
+  local arch; case "$(dpkg --print-architecture)" in amd64) arch=x64 ;; arm64) arch=arm64 ;; *) die "unsupported architecture" ;; esac
+  local base=https://nodejs.org/dist/latest-v22.x tmp; tmp=$(mktemp -d)
+  curl -fsSL -o "$tmp/SHASUMS256.txt" "$base/SHASUMS256.txt"
+  local file; file=$(awk -v a="linux-$arch.tar.xz" '$2 ~ a"$" {print $2}' "$tmp/SHASUMS256.txt")
+  [ -n "$file" ] || die "could not find a Node 22 build for $arch"
+  curl -fsSL -o "$tmp/$file" "$base/$file"
+  (cd "$tmp" && grep " $file\$" SHASUMS256.txt | sha256sum -c -) || die "Node checksum mismatch"
+  rm -rf /opt/node && mkdir -p /opt/node
+  tar -xJf "$tmp/$file" -C /opt/node --strip-components=1
+  ln -sf /opt/node/bin/node /usr/local/bin/node
+  ln -sf /opt/node/bin/npm /usr/local/bin/npm
+  ln -sf /opt/node/bin/npx /usr/local/bin/npx
+  rm -rf "$tmp"
+  node -v
 }
-if [ -z "$PORT" ]; then
-  RESERVED=" $(reserved_ports | sort -u | tr '\n' ' ') "
-  for p in $(seq 8090 8190); do
-    case "$RESERVED" in *" $p "*) continue;; esac
-    PORT=$p; break
+ensure_node
+
+# --- repository access (private repo -> read-only deploy key)
+if [[ "$REPO" == git@* ]]; then
+  mkdir -p /root/.ssh; chmod 700 /root/.ssh
+  if [ ! -f "$KEY" ]; then
+    ssh-keygen -t ed25519 -N "" -C "$NAME-server-$(hostname)" -f "$KEY" >/dev/null
+  fi
+  touch /root/.ssh/config; chmod 600 /root/.ssh/config
+  # The first install uses the plain github.com host. Another instance gets its own host alias, so it can
+  # use its own deploy key (GitHub accepts a deploy key on one repository only).
+  GH_HOST=github.com
+  if [ "$NAME" != ecs ] && [[ "$REPO" == git@github.com:* ]]; then
+    GH_HOST=github-$NAME
+    REPO="git@$GH_HOST:${REPO#git@github.com:}"
+  fi
+  if ! grep -q "$NAME-deploy" /root/.ssh/config; then
+    cat >> /root/.ssh/config <<CFG
+
+Host $GH_HOST
+  HostName github.com
+  IdentityFile $KEY
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
+CFG
+  fi
+  until git ls-remote "$REPO" >/dev/null 2>&1; do
+    cat <<MSG
+
+------------------------------------------------------------------
+Give this server READ-ONLY access to the repo:
+  GitHub -> your repository -> Settings -> Deploy keys -> Add deploy key
+  Title: this server    Key (leave "Allow write access" UNCHECKED):
+
+$(cat "$KEY.pub")
+------------------------------------------------------------------
+MSG
+    read -r -p "Press Enter once the key is added (Ctrl-C to abort)... " _ </dev/tty
   done
-  [ -n "$PORT" ] || die "no free port found between 8090 and 8190; pass --port"
-  log "Selected free port $PORT"
-else
-  if [ "$RERUN" -eq 0 ] && ss -Hltn 2>/dev/null | awk '{n=split($4,a,":"); print a[n]}' | grep -qx "$PORT"; then
-    die "port $PORT is already in use"
-  fi
 fi
 
-# ------------------------------------------------------------------ proxy choice
-if [ -n "$DOMAIN" ] && [ -z "$PROXY" ]; then
-  if systemctl is-active --quiet caddy 2>/dev/null; then PROXY=caddy
-  elif have nginx || systemctl is-active --quiet nginx 2>/dev/null; then PROXY=nginx
-  else PROXY=nginx; INSTALL_NGINX=1
-  fi
-fi
-[ -n "$PROXY" ] || PROXY=none
-case "$PROXY" in nginx|caddy|none) ;; *) die "--proxy must be nginx, caddy or none";; esac
-if [ -z "$LISTEN" ]; then
-  if [ "$PROXY" != none ]; then LISTEN=127.0.0.1; else LISTEN=0.0.0.0; fi
-fi
+say "Getting the code ($BRANCH)"
+if [ -d "$SRC/.git" ]; then git -C "$SRC" remote set-url origin "$REPO"; else git clone --quiet "$REPO" "$SRC"; fi
+git -C "$SRC" fetch --quiet origin
+git -C "$SRC" rev-parse --verify --quiet "origin/$BRANCH" >/dev/null || die "branch '$BRANCH' not found in the repo. Merge the pull requests, or pass --branch <name>."
 
-# ------------------------------------------------------------------ service account + dirs
-if [ "$NO_SYSTEMD" -eq 0 ]; then
-  if ! id "$SVC_USER" >/dev/null 2>&1; then
-    log "Creating system user '$SVC_USER'"
-    useradd --system --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin --user-group "$SVC_USER"
-  fi
-  RUN_USER="$SVC_USER"
-else
-  RUN_USER="$(id -un)"
-fi
-mkdir -p "$INSTALL_DIR"/{bin,data,run} "$CONF_DIR"
-chmod 755 "$INSTALL_DIR"
-chmod 750 "$CONF_DIR"
-[ "$NO_SYSTEMD" -eq 0 ] && chown root:"$SVC_USER" "$CONF_DIR"
-
-# ------------------------------------------------------------------ PocketBase binary
-PB_BIN="$INSTALL_DIR/bin/pocketbase"
-have_pb_version() { [ -x "$PB_BIN" ] && "$PB_BIN" --version 2>/dev/null | grep -q "$PB_VERSION"; }
-if have_pb_version; then
-  log "PocketBase $PB_VERSION already installed"
-else
-  log "Installing PocketBase $PB_VERSION ($PB_ARCH)"
-  TMP="$(mktemp -d)"; TMPS+=("$TMP")
-  URL="https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_${PB_ARCH}.zip"
-  if curl -fsSL --retry 3 -o "$TMP/pb.zip" "$URL" && unzip -q -o "$TMP/pb.zip" pocketbase -d "$TMP"; then
-    :
-  else
-    warn "GitHub download failed; trying the PyPI mirror (pocketbase-bin)"
-    have python3 || die "cannot download PocketBase from GitHub and python3 is not available for the fallback"
-    python3 -m pip download --no-deps --only-binary=:all: "pocketbase-bin==$PB_VERSION" -d "$TMP/whl" >/dev/null 2>&1 \
-      || die "PocketBase download failed from GitHub and PyPI. Download v$PB_VERSION manually to $PB_BIN and re-run."
-    unzip -q -o "$TMP"/whl/*.whl '*/scripts/pocketbase' -d "$TMP/wheel"
-    cp "$TMP"/wheel/*/scripts/pocketbase "$TMP/pocketbase"
-  fi
-  install -m 0755 "$TMP/pocketbase" "$PB_BIN"
-  have_pb_version || die "installed PocketBase does not report version $PB_VERSION"
-fi
-
-# ------------------------------------------------------------------ source code
-SRC="$INSTALL_DIR/src"
-SRC_FROM=""
-if [ -n "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR/../pocketbase/pb_hooks" ] && [ -d "$SCRIPT_DIR/../app/src" ]; then
-  SRC_FROM="$(cd "$SCRIPT_DIR/.." && pwd)"
-  CUR_BRANCH="$(git -C "$SRC_FROM" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-  if [ -n "$CUR_BRANCH" ] && [ "$REF" != main ] && [ "$CUR_BRANCH" != "$REF" ]; then
-    warn "checkout $SRC_FROM is on '$CUR_BRANCH' but --branch is '$REF'; deploying what is checked out"
-  fi
-  log "Deploying from checkout $SRC_FROM (${CUR_BRANCH:-no git})"
-else
-  log "Fetching source from $REPO_URL ($REF)"
-  CLONE="$(mktemp -d)"; TMPS+=("$CLONE")
-  git clone --quiet --depth 1 --branch "$REF" "$REPO_URL" "$CLONE"
-  SRC_FROM="$CLONE"
-fi
-log "Installing application files into $SRC"
-mkdir -p "$SRC"
-for d in pocketbase app migration deploy; do
-  rm -rf "$SRC/$d.new"; mkdir -p "$SRC/$d.new"
-  [ -d "$SRC_FROM/$d" ] || continue
-  # copy without build junk; keep an existing node_modules for fast upgrades
-  (cd "$SRC_FROM/$d" && tar --exclude=node_modules --exclude=dist --exclude=pb_data --exclude=base44-export -cf - .) | (cd "$SRC/$d.new" && tar -xf -)
-  if [ -d "$SRC/$d/node_modules" ]; then mv "$SRC/$d/node_modules" "$SRC/$d.new/node_modules"; fi
-  rm -rf "$SRC/$d"; mv "$SRC/$d.new" "$SRC/$d"
-done
-
-# ------------------------------------------------------------------ Node (only for building + importing)
-node_ok() { have node && [ "$(node -p 'process.versions.node.split(".")[0]')" -ge 18 ]; }
-NODE_BIN_DIR=""
-if node_ok; then
-  log "Using system Node $(node -v) for the build"
-else
-  log "Downloading an isolated Node $NODE_VERSION for the build (nothing is installed system-wide)"
-  NDIR="$INSTALL_DIR/.build/node"
-  if [ ! -x "$NDIR/bin/node" ]; then
-    mkdir -p "$NDIR"
-    curl -fsSL --retry 3 "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" | tar -xz --strip-components=1 -C "$NDIR"
-  fi
-  NODE_BIN_DIR="$NDIR/bin"
-  export PATH="$NODE_BIN_DIR:$PATH"
-fi
-
-log "Building the web app"
-(
-  cd "$SRC/app"
-  export npm_config_update_notifier=false npm_config_fund=false npm_config_audit=false HOME="$INSTALL_DIR/.build"
-  mkdir -p "$HOME"
-  if [ -f package-lock.json ]; then npm ci --ignore-scripts --no-progress >/dev/null; else npm install --ignore-scripts --no-progress >/dev/null; fi
-  npm run build >/dev/null
-)
-[ -f "$SRC/app/dist/index.html" ] || die "web build did not produce app/dist/index.html"
-
-# ------------------------------------------------------------------ secrets / env file
-if [ ! -f "$ENV_FILE" ]; then
-  [ -n "$ADMIN_PIN" ] || ADMIN_PIN="$(rand_digits 6)"
-  GENERATED_PIN=1
-  umask 077
-  {
-    echo "# generated by deploy/bootstrap.sh - ECS instance '$INSTANCE'"
-    echo "ECS_ADMIN_PIN=$ADMIN_PIN"
-    echo "APRS_FI_API_KEY=\"$APRS_KEY\""
-    echo "ECS_MAIL_FROM_NAME=\"${MAIL_NAME:-SWCRS ECS}\""
-    echo "ECS_MAIL_FROM_ADDRESS=\"$MAIL_ADDR\""
-  } > "$ENV_FILE"
-  umask 022
-else
-  GENERATED_PIN=0
-  # allow later runs to update individual values
-  setenv() { grep -q "^$1=" "$ENV_FILE" && sed -i "s|^$1=.*|$1=\"$2\"|" "$ENV_FILE" || echo "$1=\"$2\"" >> "$ENV_FILE"; }
-  [ -z "$APRS_KEY" ] || setenv APRS_FI_API_KEY "$APRS_KEY"
-  [ -z "$MAIL_NAME" ] || setenv ECS_MAIL_FROM_NAME "$MAIL_NAME"
-  [ -z "$MAIL_ADDR" ] || setenv ECS_MAIL_FROM_ADDRESS "$MAIL_ADDR"
-fi
-chmod 640 "$ENV_FILE"; [ "$NO_SYSTEMD" -eq 0 ] && chown root:"$SVC_USER" "$ENV_FILE"
-
-# superuser credentials
-if [ -f "$CRED_FILE" ]; then
-  SU_EMAIL="$(sed -n 's/^PocketBase superuser email: //p' "$CRED_FILE")"
-  SU_PASS="$(sed -n 's/^PocketBase superuser password: //p' "$CRED_FILE")"
-else
-  [ -n "$SU_EMAIL" ] || SU_EMAIL="admin@$INSTANCE.local"
-  [ -n "$SU_PASS" ] || SU_PASS="$(rand_alnum 24)"
-fi
-
-# state for re-runs
-cat > "$STATE_FILE" <<EOF
-PORT=$PORT
-LISTEN=$LISTEN
-DOMAIN=$DOMAIN
-PROXY=$PROXY
-INSTALL_DIR=$INSTALL_DIR
-EOF
-
-[ "$NO_SYSTEMD" -eq 0 ] && chown -R "$SVC_USER":"$SVC_USER" "$INSTALL_DIR/data" "$INSTALL_DIR/run"
-[ "$NO_SYSTEMD" -eq 0 ] && chown -R root:root "$INSTALL_DIR/bin" "$SRC" || true
-# the .build dir (node, npm cache) is no longer needed once built
-[ -d "$INSTALL_DIR/.build/.npm" ] && rm -rf "$INSTALL_DIR/.build/.npm" || true
-
-# ------------------------------------------------------------------ superuser (needs the DB, before first start)
-as_svc() { if [ "$NO_SYSTEMD" -eq 0 ]; then runuser -u "$SVC_USER" -- "$@"; else "$@"; fi; }
-if [ ! -f "$CRED_FILE" ]; then
-  log "Creating the PocketBase superuser"
-  as_svc "$PB_BIN" superuser upsert "$SU_EMAIL" "$SU_PASS" --dir="$INSTALL_DIR/data/pb_data" >/dev/null
-  umask 077
-  {
-    echo "ECS instance: $INSTANCE"
-    echo "PocketBase superuser email: $SU_EMAIL"
-    echo "PocketBase superuser password: $SU_PASS"
-    echo "ECS admin PIN (first login): ${ADMIN_PIN:-<unchanged>}"
-  } > "$CRED_FILE"
-  umask 022
-  chmod 600 "$CRED_FILE"
-fi
-
-# ------------------------------------------------------------------ start the service
-if [ "$NO_SYSTEMD" -eq 0 ]; then
-  [ -f "$SRC/deploy/ecs.service.in" ] || die "missing deploy/ecs.service.in"
-  sed -e "s|@@INSTANCE@@|$INSTANCE|g" -e "s|@@USER@@|$SVC_USER|g" -e "s|@@DIR@@|$INSTALL_DIR|g" \
-      -e "s|@@ENVFILE@@|$ENV_FILE|g" -e "s|@@LISTEN@@|$LISTEN|g" -e "s|@@PORT@@|$PORT|g" \
-      "$SRC/deploy/ecs.service.in" > "$UNIT_FILE"
-  systemctl daemon-reload
-  systemctl enable "$SERVICE.service" >/dev/null 2>&1
-  systemctl restart "$SERVICE.service"
-else
-  if [ -f "$INSTALL_DIR/run/pb.pid" ] && kill -0 "$(cat "$INSTALL_DIR/run/pb.pid")" 2>/dev/null; then kill "$(cat "$INSTALL_DIR/run/pb.pid")"; sleep 1; fi
-  (
-    set -a; . "$ENV_FILE"; set +a
-    nohup "$PB_BIN" serve --http="$LISTEN:$PORT" --dir="$INSTALL_DIR/data/pb_data" \
-      --hooksDir="$SRC/pocketbase/pb_hooks" --migrationsDir="$SRC/pocketbase/pb_migrations" \
-      --publicDir="$SRC/app/dist" --indexFallback=true > "$INSTALL_DIR/run/serve.log" 2>&1 &
-    echo $! > "$INSTALL_DIR/run/pb.pid"
-  )
-fi
-
-HEALTH_HOST="$LISTEN"; [ "$HEALTH_HOST" = 0.0.0.0 ] && HEALTH_HOST=127.0.0.1
-BASE="http://$HEALTH_HOST:$PORT"
-log "Waiting for ECS to answer on $BASE"
-for i in $(seq 1 60); do
-  curl -fsS "$BASE/api/ecs/health" >/dev/null 2>&1 && break
-  sleep 1
-  [ "$i" -eq 60 ] && { [ "$NO_SYSTEMD" -eq 0 ] && journalctl -u "$SERVICE" -n 30 --no-pager || tail -n 30 "$INSTALL_DIR/run/serve.log"; die "service did not become healthy"; }
-done
-
-# first request seeds the admin PIN (blank database only)
-curl -fsS "$BASE/api/ecs/public-events" >/dev/null
-
-# ------------------------------------------------------------------ PocketBase settings
-export PB_URL="$BASE" PB_SUPERUSER_EMAIL="$SU_EMAIL" PB_SUPERUSER_PASSWORD="$SU_PASS"
-if [ -n "$DOMAIN" ]; then export PB_APP_URL="https://$DOMAIN"; fi
-if [ "$PROXY" != none ]; then export PB_TRUSTED_PROXY=1; fi
-if [ -n "$SMTP_HOST" ]; then
-  export PB_SMTP_HOST="$SMTP_HOST" PB_SMTP_PORT="$SMTP_PORT" PB_SMTP_USER="$SMTP_USER" PB_SMTP_PASS="$SMTP_PASS" PB_SMTP_TLS="$SMTP_TLS"
-  [ -z "$MAIL_ADDR" ] || export PB_SENDER_ADDRESS="$MAIL_ADDR"
-  [ -z "$MAIL_NAME" ] || export PB_SENDER_NAME="$MAIL_NAME"
-fi
-node "$SRC/deploy/pb-settings.mjs"
-
-# ------------------------------------------------------------------ data import
-if [ "$NO_IMPORT" -eq 0 ]; then
-  [ -n "$IMPORT_DIR" ] || { [ -d "$SRC_FROM/migration/base44-export" ] && IMPORT_DIR="$SRC_FROM/migration/base44-export" || true; }
-  if [ -n "$IMPORT_DIR" ]; then
-    [ -d "$IMPORT_DIR" ] || die "--import-dir $IMPORT_DIR not found"
-    log "Importing legacy export from $IMPORT_DIR"
-    extra=(); [ "$IMPORT_ADMIN_PIN" -eq 1 ] && extra+=(--with-admin-pin)
-    node "$SRC/migration/import-base44.mjs" --dir "$IMPORT_DIR" --url "$BASE" --email "$SU_EMAIL" --password "$SU_PASS" "${extra[@]}"
-  else
-    log "No legacy export supplied - starting with an empty database (use --import-dir later to import)"
-  fi
-fi
-
-# ------------------------------------------------------------------ reverse proxy (only our own site file)
-if [ "$PROXY" = nginx ] && [ -n "$DOMAIN" ]; then
-  if ! have nginx; then
-    log "Installing nginx"
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx
-  fi
-  log "Adding nginx site $NGINX_SITE for $DOMAIN"
-  [ -e "$NGINX_SITE" ] && ! grep -q "managed by deploy/bootstrap.sh" "$NGINX_SITE" && die "$NGINX_SITE exists and is not ours"
-  sed -e "s|@@INSTANCE@@|$INSTANCE|g" -e "s|@@DOMAIN@@|$DOMAIN|g" -e "s|@@PORT@@|$PORT|g" "$SRC/deploy/nginx.conf.in" > "$NGINX_SITE"
-  ln -sf "$NGINX_SITE" "$NGINX_LINK"
-  if nginx -t >/dev/null 2>&1; then
-    systemctl reload nginx 2>/dev/null || systemctl start nginx
-  else
-    rm -f "$NGINX_LINK" "$NGINX_SITE"
-    nginx -t || true
-    warn "nginx config test failed - our site was removed again, other sites are untouched."
-  fi
-  if [ "$CERTBOT" -eq 1 ]; then
-    have certbot || DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx
-    if [ -n "$LE_EMAIL" ]; then CB_EMAIL=(-m "$LE_EMAIL"); else CB_EMAIL=(--register-unsafely-without-email); fi
-    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos "${CB_EMAIL[@]}" --redirect \
-      || warn "certbot failed; the site works over HTTP. Run certbot manually once DNS points here."
-  fi
-elif [ "$PROXY" = caddy ] && [ -n "$DOMAIN" ]; then
-  mkdir -p /etc/caddy/conf.d
-  [ -e "$CADDY_SITE" ] && ! grep -q "managed by deploy/bootstrap.sh" "$CADDY_SITE" && die "$CADDY_SITE exists and is not ours"
-  sed -e "s|@@INSTANCE@@|$INSTANCE|g" -e "s|@@DOMAIN@@|$DOMAIN|g" -e "s|@@PORT@@|$PORT|g" "$SRC/deploy/Caddyfile.in" > "$CADDY_SITE"
-  if grep -qE '^\s*import\s+(/etc/caddy/)?conf\.d/' /etc/caddy/Caddyfile 2>/dev/null; then
-    caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1 && systemctl reload caddy || warn "Caddy validation failed; check $CADDY_SITE"
-  else
-    warn "Your Caddyfile does not import /etc/caddy/conf.d/*. Add this line to /etc/caddy/Caddyfile (I do not edit existing proxy configs):"
-    warn "    import /etc/caddy/conf.d/*.caddy"
-  fi
-fi
-
-# the PIN now lives in the database; no need to keep seeding material around once it exists
-if [ "$GENERATED_PIN" -eq 1 ]; then sed -i '/^ECS_ADMIN_PIN=/d' "$ENV_FILE"; fi
-
-# ------------------------------------------------------------------ summary
-URL_SHOWN="http://${DOMAIN:-$HEALTH_HOST}"; [ -z "$DOMAIN" ] && URL_SHOWN="$BASE"
-[ -n "$DOMAIN" ] && [ "$CERTBOT" -eq 1 ] && URL_SHOWN="https://$DOMAIN"
-cat <<EOF
-
-────────────────────────────────────────────────────────────
- ECS instance '$INSTANCE' is running
-   App                $URL_SHOWN
-   PocketBase admin   $URL_SHOWN/_/
-   Service            $( [ "$NO_SYSTEMD" -eq 0 ] && echo "systemctl status $SERVICE" || echo "pid $(cat "$INSTALL_DIR/run/pb.pid") (--no-systemd)" )
-   Data               $INSTALL_DIR/data/pb_data   (back this up)
-   Credentials        $CRED_FILE   (root only)
-   Listening on       $LISTEN:$PORT   proxy: $PROXY
-────────────────────────────────────────────────────────────
-EOF
-[ "$GENERATED_PIN" -eq 1 ] && echo " Admin PIN: $ADMIN_PIN  (also in the credentials file; change it in the app under Events)"
-[ "$LISTEN" = 0.0.0.0 ] && warn "ECS is reachable over plain HTTP on port $PORT. For anything but a trusted LAN put it behind HTTPS (--domain)."
-exit 0
+git -C "$SRC" checkout --quiet -B "$BRANCH" "origin/$BRANCH"
+install -m 755 "$SRC/deploy/update.sh" "/usr/local/bin/$NAME-update"
+exec env NAME="$NAME" "/usr/local/bin/$NAME-update" "${args[@]}"
