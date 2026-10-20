@@ -352,5 +352,6 @@ git -C "$SRC" fetch --quiet origin
 git -C "$SRC" rev-parse --verify --quiet "origin/$BRANCH" >/dev/null || die "branch '$BRANCH' not found in the repo. Merge the pull requests, or pass --branch <name>."
 
 git -C "$SRC" checkout --quiet -B "$BRANCH" "origin/$BRANCH"
+[ -f "$SRC/deploy/update.sh" ] || die "branch '$BRANCH' has no deploy/update.sh, so it predates this installer. Pass --branch <a branch that has it>, for example the one this bootstrap.sh was downloaded from."
 install -m 755 "$SRC/deploy/update.sh" "/usr/local/bin/$NAME-update"
 exec env NAME="$NAME" "/usr/local/bin/$NAME-update" "${args[@]}"
