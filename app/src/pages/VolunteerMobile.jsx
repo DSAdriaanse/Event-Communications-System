@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { pb, ecsLogin, fetchPublicEvents } from "@/api/pb";
+import { isModuleEnabled } from "@/lib/modules";
 import { Radio, MapPin, Hash, Loader2, Plus, List, Search, Lock, LogOut, Eye, EyeOff, ChevronDown } from "lucide-react";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -41,7 +42,7 @@ function BibEntryTab({ stations, participants, activeEventId, setParticipants, l
     const st = stations.find(s => s.id === station);
     let participant = matched;
     if (!participant) {
-      participant = await base44.entities.Participant.create({
+      participant = await db.participants.create({
         event_id: activeEventId, bib_number: bibNum, runner_name: "Unknown",
         status: updateType === "Seen" ? "Active" : updateType,
         current_location_name: st?.name || null, current_location_station_id: st?.id || null,
@@ -51,14 +52,14 @@ function BibEntryTab({ stations, participants, activeEventId, setParticipants, l
       const newStatus = updateType === "Seen"
         ? (participant.status === "Active" || !participant.status ? "Active" : participant.status)
         : updateType;
-      await base44.entities.Participant.update(participant.id, {
+      await db.participants.update(participant.id, {
         status: newStatus,
         current_location_name: updateType === "Seen" ? st?.name : participant.current_location_name,
         current_location_station_id: updateType === "Seen" ? st?.id : participant.current_location_station_id,
         last_update_date: new Date().toISOString(),
       });
     }
-    await base44.entities.ParticipantStatusUpdate.create({
+    await db.participantStatusUpdates.create({
       event_id: activeEventId, participant_id: participant.id, bib_number: bibNum,
       update_type: updateType, aide_station_id: st?.id || null, aide_station_name: st?.name || null,
       timestamp: new Date().toISOString(),
@@ -66,7 +67,7 @@ function BibEntryTab({ stations, participants, activeEventId, setParticipants, l
     });
     setFlash({ type: updateType, bib: bibNum, name: matched?.runner_name });
     setBib(""); setComment(""); setConfirmAction(null); setSubmitting(false);
-    base44.entities.Participant.filter({ event_id: activeEventId }).then(setParticipants);
+    db.participants.filter({ event_id: activeEventId }).then(setParticipants);
     setTimeout(() => setFlash(null), 2500);
   };
 
@@ -175,7 +176,7 @@ function ResourceRequestTab({ stations, operators, activeEventId, lockedStationI
     if (!form.item.trim()) return;
     if (!form.station_name) { setError("Please select your station before submitting."); return; }
     setSubmitting(true);
-    await base44.entities.ResourceRequest.create({
+    await db.resourceRequests.create({
       event_id: activeEventId, type: form.type, item: form.item.trim(),
       priority: form.priority, status: "Pending",
       station_name: form.station_name || undefined,
@@ -275,7 +276,7 @@ function RequestCard({ request, onStatusChange }) {
 
   const applyStatus = async (newStatus) => {
     setUpdating(true);
-    await base44.entities.ResourceRequest.update(r.id, { status: newStatus });
+    await db.resourceRequests.update(r.id, { status: newStatus });
     onStatusChange(r.id, newStatus);
     setUpdating(false); setConfirm(null); setExpanded(false);
   };
@@ -332,7 +333,7 @@ function ViewRequestsTab({ activeEventId }) {
 
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
-    const reqs = await base44.entities.ResourceRequest.filter({ event_id: activeEventId }, "-created_date");
+    const reqs = await db.resourceRequests.filter({ event_id: activeEventId }, "-created_date");
     setRequests(reqs); setLoading(false);
   };
 
@@ -341,7 +342,7 @@ function ViewRequestsTab({ activeEventId }) {
   // live updates (quiet refetch, no spinner)
   useEffect(() => {
     let t = null;
-    const unsub = base44.entities.ResourceRequest.subscribe(() => { clearTimeout(t); t = setTimeout(() => load(true), 300); });
+    const unsub = db.resourceRequests.subscribe(() => { clearTimeout(t); t = setTimeout(() => load(true), 300); });
     return () => { clearTimeout(t); unsub(); };
   }, [activeEventId]);
 
@@ -391,11 +392,11 @@ function BibDetailCard({ participant }) {
     let t = null;
     const fetchHistory = (silent) => {
       if (!silent) setLoading(true);
-      base44.entities.ParticipantStatusUpdate.filter({ participant_id: participant.id }, "timestamp")
+      db.participantStatusUpdates.filter({ participant_id: participant.id }, "timestamp")
         .then(updates => { setHistory(updates); setLoading(false); });
     };
     fetchHistory(false);
-    const unsub = base44.entities.ParticipantStatusUpdate.subscribe(() => { clearTimeout(t); t = setTimeout(() => fetchHistory(true), 300); });
+    const unsub = db.participantStatusUpdates.subscribe(() => { clearTimeout(t); t = setTimeout(() => fetchHistory(true), 300); });
     return () => { clearTimeout(t); unsub(); };
   }, [participant.id]);
 
@@ -478,8 +479,26 @@ function BibLookupTab({ participants }) {
 }
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
+// Mobile tabs follow the event's module switches (Bib Tracker / Resource Requests / Mobile Entry).
+const TAB_MODULE = { bib: "BibTracker", lookup: "BibTracker", request: "ResourceRequests", requests: "ResourceRequests" };
+
 function MobileApp({ session, onLogout }) {
   const [tab, setTab] = useState("bib");
+  const [event, setEvent] = useState(null);
+
+  useEffect(() => {
+    const fetchEvent = () => db.events.get(session.eventId).then(setEvent).catch(() => {});
+    fetchEvent();
+    const unsub = db.events.subscribe((e) => { if (e.id === session.eventId) fetchEvent(); });
+    return unsub;
+  }, [session.eventId]);
+
+  const visibleTabs = TABS.filter(t => isModuleEnabled(event, TAB_MODULE[t.id]));
+  const mobileOff = !isModuleEnabled(event, "VolunteerMobile");
+  const tabOk = (id) => !mobileOff && visibleTabs.some(t => t.id === id);
+  useEffect(() => {
+    if (visibleTabs.length && !visibleTabs.some(t => t.id === tab)) setTab(visibleTabs[0].id);
+  }, [visibleTabs.map(t => t.id).join(",")]);
   const [stations, setStations] = useState([]);
   const [operators, setOperators] = useState([]);
   const [participants, setParticipants] = useState([]);
@@ -487,9 +506,9 @@ function MobileApp({ session, onLogout }) {
   useEffect(() => {
     let t = null;
     const fetchAll = () => Promise.all([
-      base44.entities.AideStation.filter({ event_id: session.eventId }),
-      base44.entities.Operator.filter({ event_id: session.eventId }),
-      base44.entities.Participant.filter({ event_id: session.eventId }),
+      db.aideStations.filter({ event_id: session.eventId }),
+      db.operators.filter({ event_id: session.eventId }),
+      db.participants.filter({ event_id: session.eventId }),
     ]).then(([sts, ops, ps]) => {
       setStations(sts.filter(s => s.status !== "Closed"));
       setOperators(ops);
@@ -499,9 +518,9 @@ function MobileApp({ session, onLogout }) {
     // live updates: other volunteers and net control change participants/stations
     const refresh = () => { clearTimeout(t); t = setTimeout(fetchAll, 300); };
     const unsubs = [
-      base44.entities.Participant.subscribe(refresh),
-      base44.entities.AideStation.subscribe(refresh),
-      base44.entities.Operator.subscribe(refresh),
+      db.participants.subscribe(refresh),
+      db.aideStations.subscribe(refresh),
+      db.operators.subscribe(refresh),
     ];
     return () => { clearTimeout(t); unsubs.forEach(u => u()); };
   }, [session.eventId]);
@@ -518,8 +537,8 @@ function MobileApp({ session, onLogout }) {
           <LogOut className="w-3.5 h-3.5" /> Leave
         </button>
       </div>
-      <div className="flex-none grid grid-cols-4 border-b border-gray-800 bg-gray-900">
-        {TABS.map(({ id, label, icon: Icon }) => (
+      <div className="flex-none grid border-b border-gray-800 bg-gray-900" style={{ gridTemplateColumns: `repeat(${Math.max(visibleTabs.length, 1)}, minmax(0, 1fr))` }}>
+        {visibleTabs.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setTab(id)}
             className={`flex flex-col items-center gap-0.5 py-2.5 text-xs font-medium transition-all ${tab === id ? "text-cyan-400 border-b-2 border-cyan-400" : "text-gray-500"}`}>
             <Icon className="w-4 h-4" />
@@ -528,10 +547,13 @@ function MobileApp({ session, onLogout }) {
         ))}
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-4 pb-10">
-        {tab === "bib" && <BibEntryTab stations={stations} participants={participants} activeEventId={session.eventId} setParticipants={setParticipants} lockedStationId={session.stationId || null} lockedCallsign={session.callsign || null} />}
-        {tab === "request" && <ResourceRequestTab stations={stations} operators={operators} activeEventId={session.eventId} lockedStationId={session.stationId || null} lockedCallsign={session.callsign || null} />}
-        {tab === "requests" && <ViewRequestsTab activeEventId={session.eventId} />}
-        {tab === "lookup" && <BibLookupTab participants={participants} activeEventId={session.eventId} />}
+        {(mobileOff || visibleTabs.length === 0) && (
+          <p className="text-center text-sm text-gray-500 py-10">{mobileOff ? "Mobile entry is not enabled for this event." : "No mobile entry features are enabled for this event."}</p>
+        )}
+        {tabOk("bib") && tab === "bib" && <BibEntryTab stations={stations} participants={participants} activeEventId={session.eventId} setParticipants={setParticipants} lockedStationId={session.stationId || null} lockedCallsign={session.callsign || null} />}
+        {tabOk("request") && tab === "request" && <ResourceRequestTab stations={stations} operators={operators} activeEventId={session.eventId} lockedStationId={session.stationId || null} lockedCallsign={session.callsign || null} />}
+        {tabOk("requests") && tab === "requests" && <ViewRequestsTab activeEventId={session.eventId} />}
+        {tabOk("lookup") && tab === "lookup" && <BibLookupTab participants={participants} activeEventId={session.eventId} />}
       </div>
     </div>
   );
@@ -564,8 +586,8 @@ function MobileLogin({ onSession }) {
   useEffect(() => {
     if (!selectedEventId || !pinValidated) { setStations([]); setOperators([]); return; }
     Promise.all([
-      base44.entities.AideStation.filter({ event_id: selectedEventId }),
-      base44.entities.Operator.filter({ event_id: selectedEventId }),
+      db.aideStations.filter({ event_id: selectedEventId }),
+      db.operators.filter({ event_id: selectedEventId }),
     ]).then(([sts, ops]) => {
       setStations(sts.filter(s => s.status !== "Closed"));
       setOperators(ops);

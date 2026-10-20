@@ -1,6 +1,6 @@
 // PIN based sessions for ECS.
 //
-// Base44 ECS had a purely client side PIN gate. Here the PIN is verified by the server,
+// PINs are verified by the server (never in the browser),
 // which then hands out a real PocketBase auth token (collection `ecs_users`). The
 // collection API rules then enforce what that token may read/write:
 //   role "admin"  -> everything

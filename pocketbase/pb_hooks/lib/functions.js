@@ -1,4 +1,4 @@
-// Backend "functions" — ports of base44/functions/*/entry.ts to PocketBase JS hooks.
+// Backend "functions" for ECS (export/import, e-mail, APRS.fi, printable reports).
 //
 //   exportEventData         -> POST /api/functions/exportEventData
 //   importEventData         -> POST /api/functions/importEventData
@@ -19,7 +19,7 @@ function isoDate(v) {
   return v.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:)/, "$1T$2");
 }
 
-/** PocketBase record -> plain Base44-shaped object. */
+/** PocketBase record -> plain object (ISO timestamps). */
 function plain(rec) {
   const o = JSON.parse(JSON.stringify(rec));
   delete o.collectionId;
@@ -196,7 +196,7 @@ function aprsFiTracker() {
     url: `https://api.aprs.fi/api/get?name=${encodeURIComponent(unique.join(","))}&what=loc&apikey=${encodeURIComponent(key)}&format=json`,
     method: "GET",
     timeout: 20,
-    headers: { "User-Agent": "ECS-PocketBase/1.0 (+https://github.com/DSAdriaanse/event_communications_system)" },
+    headers: { "User-Agent": "ECS-PocketBase/1.0 (+https://github.com/DSAdriaanse/Event-Communications-System)" },
   });
   const data = res.json || {};
   if (data.result !== "ok") {

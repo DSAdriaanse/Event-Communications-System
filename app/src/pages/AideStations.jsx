@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { Plus, Edit2, Trash2, X, Save, MapPin, Radio, GripVertical } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
@@ -69,8 +69,8 @@ export default function AideStations() {
   const load = async () => {
     setLoading(true);
     const [all, allFreqs] = await Promise.all([
-      base44.entities.AideStation.list(),
-      base44.entities.Frequency.list(),
+      db.aideStations.list(),
+      db.frequencies.list(),
     ]);
     const filtered = activeEventId ? all.filter(s => s.event_id === activeEventId) : all;
     filtered.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
@@ -86,7 +86,7 @@ export default function AideStations() {
     const [moved] = reordered.splice(result.source.index, 1);
     reordered.splice(result.destination.index, 0, moved);
     setStations(reordered);
-    await Promise.all(reordered.map((s, i) => base44.entities.AideStation.update(s.id, { sort_order: i })));
+    await Promise.all(reordered.map((s, i) => db.aideStations.update(s.id, { sort_order: i })));
   };
 
   const openNew = () => { setForm(empty); setEditing(null); setShowForm(true); setAssetInput(""); setCopyTimes(false); };
@@ -94,7 +94,7 @@ export default function AideStations() {
     setForm({ ...s, assets: s.assets || [], start_datetime: toEventLocalInput(s.start_datetime), end_datetime: toEventLocalInput(s.end_datetime) });
     setEditing(s.id); setShowForm(true); setAssetInput(""); setCopyTimes(false);
   };
-  const del = async (id) => { if (confirm("Delete this station?")) { await base44.entities.AideStation.delete(id); load(); } };
+  const del = async (id) => { if (confirm("Delete this station?")) { await db.aideStations.delete(id); load(); } };
 
   const save = async () => {
     const isNoneSource = !form.position_source || form.position_source === "None";
@@ -107,11 +107,11 @@ export default function AideStations() {
     // Convert event-local datetime-local strings to UTC ISO strings for storage
     if (data.start_datetime) data.start_datetime = fromEventLocalInput(data.start_datetime);
     if (data.end_datetime) data.end_datetime = fromEventLocalInput(data.end_datetime);
-    if (editing) await base44.entities.AideStation.update(editing, data);
-    else await base44.entities.AideStation.create(data);
+    if (editing) await db.aideStations.update(editing, data);
+    else await db.aideStations.create(data);
     if (copyTimes && (form.start_datetime || form.end_datetime)) {
       const others = stations.filter(s => s.id !== editing && s.status !== "Closed");
-      await Promise.all(others.map(s => base44.entities.AideStation.update(s.id, {
+      await Promise.all(others.map(s => db.aideStations.update(s.id, {
         start_datetime: data.start_datetime || s.start_datetime,
         end_datetime: data.end_datetime || s.end_datetime,
       })));

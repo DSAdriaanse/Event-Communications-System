@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { useAuth } from "@/components/PinGate";
 import { Save, Loader2, BookOpen } from "lucide-react";
@@ -141,7 +141,7 @@ export default function ConOps() {
     if (!activeEventId) return;
     setSavingComms(true);
     setSavedComms(false);
-    await base44.entities.Event.update(activeEventId, { conops_comms: html });
+    await db.events.update(activeEventId, { conops_comms: html });
     await loadEvents();
     setSavingComms(false);
     setSavedComms(true);

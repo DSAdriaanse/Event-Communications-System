@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { X, Edit2, Save, Trash2, MapPin, XCircle, CheckCircle, Clock, AlertTriangle } from "lucide-react";
 import { formatEventDateTime, formatEventTime } from "@/lib/eventTime";
 
@@ -30,14 +30,14 @@ export default function BibParticipantDetail({ participant, updates, onClose, on
   const sorted = [...updates].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
   const saveParticipant = async () => {
-    await base44.entities.Participant.update(participant.id, form);
+    await db.participants.update(participant.id, form);
     setEditing(false);
     onRefresh();
   };
 
   const deleteUpdate = async (upd) => {
     if (!confirm("Delete this history entry?")) return;
-    await base44.entities.ParticipantStatusUpdate.delete(upd.id);
+    await db.participantStatusUpdates.delete(upd.id);
     onRefresh();
   };
 
@@ -47,7 +47,7 @@ export default function BibParticipantDetail({ participant, updates, onClose, on
   };
 
   const saveUpdate = async (upd) => {
-    await base44.entities.ParticipantStatusUpdate.update(upd.id, editUpdateForm);
+    await db.participantStatusUpdates.update(upd.id, editUpdateForm);
     setEditingUpdate(null);
     onRefresh();
   };

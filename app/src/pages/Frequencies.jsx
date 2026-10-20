@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { Plus, Edit2, Trash2, X, Save, Zap, Download, GripVertical } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
@@ -76,7 +76,7 @@ export default function Frequencies() {
 
   const load = async () => {
     setLoading(true);
-    const all = await base44.entities.Frequency.list();
+    const all = await db.frequencies.list();
     const filtered = activeEventId ? all.filter(f => f.event_id === activeEventId) : all;
     filtered.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
     setFreqs(filtered);
@@ -91,17 +91,17 @@ export default function Frequencies() {
     const [moved] = reordered.splice(result.source.index, 1);
     reordered.splice(result.destination.index, 0, moved);
     setFreqs(reordered);
-    await Promise.all(reordered.map((f, i) => base44.entities.Frequency.update(f.id, { sort_order: i })));
+    await Promise.all(reordered.map((f, i) => db.frequencies.update(f.id, { sort_order: i })));
   };
 
   const openNew = () => { setForm(empty); setEditing(null); setShowForm(true); };
   const openEdit = (f) => { setForm({ ...f }); setEditing(f.id); setShowForm(true); };
-  const del = async (id) => { if (confirm("Delete?")) { await base44.entities.Frequency.delete(id); load(); } };
+  const del = async (id) => { if (confirm("Delete?")) { await db.frequencies.delete(id); load(); } };
 
   const save = async () => {
     const data = { ...form, frequency_mhz: parseFloat(form.frequency_mhz), event_id: activeEventId };
-    if (editing) await base44.entities.Frequency.update(editing, data);
-    else await base44.entities.Frequency.create(data);
+    if (editing) await db.frequencies.update(editing, data);
+    else await db.frequencies.create(data);
     setShowForm(false);
     load();
   };

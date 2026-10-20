@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { pb, ecsLogin, fetchPublicEvents } from "@/api/pb";
 import { Radio, Lock, Eye, EyeOff, Smartphone } from "lucide-react";
 import { useEvent } from "@/components/EventContext";
@@ -67,8 +67,8 @@ function LoginScreen({ events, onAuth }) {
   useEffect(() => {
     if (!selectedEventId || !pinValidated) { setStations([]); setOperators([]); return; }
     Promise.all([
-      base44.entities.AideStation.filter({ event_id: selectedEventId }),
-      base44.entities.Operator.filter({ event_id: selectedEventId }),
+      db.aideStations.filter({ event_id: selectedEventId }),
+      db.operators.filter({ event_id: selectedEventId }),
     ]).then(([sts, ops]) => {
       setStations(sts.filter(s => s.status !== "Closed"));
       setOperators(ops);

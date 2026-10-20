@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { MapPin, Hash, Loader2, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -24,8 +24,8 @@ export default function BibMobile() {
   useEffect(() => {
     if (!activeEventId) return;
     Promise.all([
-      base44.entities.AideStation.filter({ event_id: activeEventId }),
-      base44.entities.Participant.filter({ event_id: activeEventId }),
+      db.aideStations.filter({ event_id: activeEventId }),
+      db.participants.filter({ event_id: activeEventId }),
     ]).then(([sts, ps]) => {
       setStations(sts.filter(s => s.status !== "Closed"));
       setParticipants(ps);
@@ -43,7 +43,7 @@ export default function BibMobile() {
 
     let participant = matched;
     if (!participant) {
-      participant = await base44.entities.Participant.create({
+      participant = await db.participants.create({
         event_id: activeEventId,
         bib_number: bibNum,
         runner_name: "Unknown",
@@ -56,7 +56,7 @@ export default function BibMobile() {
       const newStatus = updateType === "Seen"
         ? (participant.status === "Active" || !participant.status ? "Active" : participant.status)
         : updateType;
-      await base44.entities.Participant.update(participant.id, {
+      await db.participants.update(participant.id, {
         status: newStatus,
         current_location_name: updateType === "Seen" ? st?.name : participant.current_location_name,
         current_location_station_id: updateType === "Seen" ? st?.id : participant.current_location_station_id,
@@ -64,7 +64,7 @@ export default function BibMobile() {
       });
     }
 
-    await base44.entities.ParticipantStatusUpdate.create({
+    await db.participantStatusUpdates.create({
       event_id: activeEventId,
       participant_id: participant.id,
       bib_number: bibNum,
@@ -79,7 +79,7 @@ export default function BibMobile() {
     setSubmitting(false);
 
     // Refresh participants list
-    base44.entities.Participant.filter({ event_id: activeEventId }).then(setParticipants);
+    db.participants.filter({ event_id: activeEventId }).then(setParticipants);
 
     setTimeout(() => setFlash(null), 2500);
   };

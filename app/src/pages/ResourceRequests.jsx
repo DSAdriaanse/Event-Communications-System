@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { Plus, Loader2, X } from "lucide-react";
 import { formatEventDateTime } from "@/lib/eventTime";
@@ -105,9 +105,9 @@ export default function ResourceRequests() {
     if (!activeEventId) { setLoading(false); return; }
     if (!silent) setLoading(true);
     const [reqs, sts, ops] = await Promise.all([
-      base44.entities.ResourceRequest.filter({ event_id: activeEventId }, "-created_date"),
-      base44.entities.AideStation.filter({ event_id: activeEventId }),
-      base44.entities.Operator.filter({ event_id: activeEventId }),
+      db.resourceRequests.filter({ event_id: activeEventId }, "-created_date"),
+      db.aideStations.filter({ event_id: activeEventId }),
+      db.operators.filter({ event_id: activeEventId }),
     ]);
     setRequests(reqs);
     setStations(sts);
@@ -126,9 +126,9 @@ export default function ResourceRequests() {
       timer = setTimeout(() => load(true), 300);
     };
     const unsubs = [
-      base44.entities.ResourceRequest.subscribe(refresh),
-      base44.entities.AideStation.subscribe(refresh),
-      base44.entities.Operator.subscribe(refresh),
+      db.resourceRequests.subscribe(refresh),
+      db.aideStations.subscribe(refresh),
+      db.operators.subscribe(refresh),
     ];
     return () => { clearTimeout(timer); unsubs.forEach((u) => u()); };
   }, [activeEventId]);
@@ -151,7 +151,7 @@ export default function ResourceRequests() {
   };
 
   const logEvent = (content, priority = "Routine") => {
-    base44.entities.EventLog.create({
+    db.eventLogs.create({
       event_id: activeEventId,
       type: "note",
       content,
@@ -163,14 +163,14 @@ export default function ResourceRequests() {
   const save = async () => {
     const payload = { ...form, event_id: activeEventId, quantity: form.quantity !== "" ? Number(form.quantity) : undefined };
     if (editing) {
-      await base44.entities.ResourceRequest.update(editing.id, payload);
+      await db.resourceRequests.update(editing.id, payload);
       const parts = [`[Resource Request] UPDATED: ${payload.type} — ${payload.item}`];
       if (payload.station_name) parts.push(`Station: ${payload.station_name}`);
       if (payload.requested_by) parts.push(`Requested by: ${payload.requested_by}`);
       if (payload.status) parts.push(`Status: ${payload.status}`);
       logEvent(parts.join(" | "), payload.priority === "Emergency" ? "Emergency" : payload.priority === "Urgent" ? "Priority" : "Routine");
     } else {
-      await base44.entities.ResourceRequest.create(payload);
+      await db.resourceRequests.create(payload);
       const parts = [`[Resource Request] NEW: ${payload.type} — ${payload.item}`];
       if (payload.quantity) parts.push(`Qty: ${payload.quantity} ${payload.unit || ""}`.trim());
       if (payload.station_name) parts.push(`Station: ${payload.station_name}`);
@@ -182,13 +182,13 @@ export default function ResourceRequests() {
   };
 
   const updateStatus = async (req, status) => {
-    await base44.entities.ResourceRequest.update(req.id, { status });
+    await db.resourceRequests.update(req.id, { status });
     setRequests(prev => prev.map(r => r.id === req.id ? { ...r, status } : r));
     logEvent(`[Resource Request] STATUS: ${req.type} — ${req.item} → ${status}${req.station_name ? ` | Station: ${req.station_name}` : ""}`);
   };
 
   const deleteReq = async (id) => {
-    await base44.entities.ResourceRequest.delete(id);
+    await db.resourceRequests.delete(id);
     setRequests(prev => prev.filter(r => r.id !== id));
   };
 

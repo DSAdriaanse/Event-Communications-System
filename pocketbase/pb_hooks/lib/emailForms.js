@@ -1,5 +1,5 @@
 // ICS 201 / 204 / 205A HTML bodies for the "email this form to all operators" feature.
-// Ported from base44/functions/sendICSEmail/entry.ts (timezone formatting via lib/tz.js).
+// Timezone formatting via lib/tz.js.
 
 
 const tzlib = require(`${__hooks}/lib/tz.js`);

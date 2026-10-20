@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { X, Save } from "lucide-react";
 
 export default function BibAddModal({ eventId, onClose, onSaved }) {
@@ -9,7 +9,7 @@ export default function BibAddModal({ eventId, onClose, onSaved }) {
   const save = async () => {
     if (!form.bib_number.trim() || !form.runner_name.trim()) return;
     setSaving(true);
-    await base44.entities.Participant.create({ ...form, event_id: eventId });
+    await db.participants.create({ ...form, event_id: eventId });
     setSaving(false);
     onSaved();
     onClose();

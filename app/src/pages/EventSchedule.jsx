@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { useEvent } from "@/components/EventContext";
 import { CalendarClock, ChevronDown, ChevronRight, Radio, Users } from "lucide-react";
 
@@ -60,9 +60,9 @@ export default function EventSchedule() {
   const load = async () => {
     setLoading(true);
     const [allEvents, st, as] = await Promise.all([
-      base44.entities.Event.list(),
-      base44.entities.AideStation.filter({ event_id: activeEventId }),
-      base44.entities.Assignment.filter({ event_id: activeEventId }),
+      db.events.list(),
+      db.aideStations.filter({ event_id: activeEventId }),
+      db.assignments.filter({ event_id: activeEventId }),
     ]);
     const ev = allEvents.find(e => e.id === activeEventId) || null;
     setEvent(ev);
@@ -155,13 +155,13 @@ export default function EventSchedule() {
       if (ref.type === "station") {
         setStations(prev => {
           const s = prev.find(x => x.id === ref.id);
-          if (s) base44.entities.AideStation.update(s.id, { start_datetime: s.start_datetime, end_datetime: s.end_datetime });
+          if (s) db.aideStations.update(s.id, { start_datetime: s.start_datetime, end_datetime: s.end_datetime });
           return prev;
         });
       } else {
         setAssignments(prev => {
           const a = prev.find(x => x.id === ref.id);
-          if (a) base44.entities.Assignment.update(a.id, { start_time: a.start_time, end_time: a.end_time });
+          if (a) db.assignments.update(a.id, { start_time: a.start_time, end_time: a.end_time });
           return prev;
         });
       }
@@ -186,7 +186,7 @@ export default function EventSchedule() {
     const newStart = snap15(clickMs);
     const newEnd = newStart + 60 * 60 * 1000; // default 1 hour
     const updated = { start_time: new Date(newStart).toISOString(), end_time: new Date(newEnd).toISOString() };
-    await base44.entities.Assignment.update(assignment.id, updated);
+    await db.assignments.update(assignment.id, updated);
     setAssignments(prev => prev.map(a => a.id === assignment.id ? { ...a, ...updated } : a));
   }, [winStart, winDuration]);
 

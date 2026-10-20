@@ -2,7 +2,7 @@
 # ECS (Event Communications System) - bootstrap for a blank (or shared) Debian/Ubuntu server.
 #
 #   sudo ./deploy/bootstrap.sh [options]
-#   curl -fsSL https://raw.githubusercontent.com/DSAdriaanse/event_communications_system/main/deploy/bootstrap.sh | sudo bash -s -- [options]
+#   curl -fsSL https://raw.githubusercontent.com/DSAdriaanse/Event-Communications-System/main/deploy/bootstrap.sh | sudo bash -s -- [options]
 #
 # Safe to run next to other PocketBase instances: everything is namespaced by --instance
 # (own user, own systemd unit, own /opt/<instance> + /etc/<instance> directories, own free TCP port).
@@ -21,9 +21,9 @@
 #   --admin-pin PIN          initial ECS admin PIN (blank database only)         [random 6 digits]
 #   --superuser-email MAIL   PocketBase superuser                                 [admin@<instance>.local]
 #   --superuser-password PW  PocketBase superuser password                        [random]
-#   --import-dir DIR         folder of Base44 *_export.csv files to import       [migration/base44-export if present]
+#   --import-dir DIR         legacy import: folder of *_export.csv files from the old Base44 app [migration/base44-export if present]
 #   --no-import              do not import anything
-#   --import-admin-pin       also import the Base44 admin PIN (default: keep the new one)
+#   --import-admin-pin       also import the legacy admin PIN (default: keep the new one)
 #   --smtp-host H --smtp-port P --smtp-user U --smtp-pass PW [--smtp-tls]   e-mail via your SMTP server
 #   --mail-from-name N --mail-from-address A
 #   --aprs-key KEY           aprs.fi API key for position polling
@@ -57,7 +57,7 @@ IMPORT_ADMIN_PIN=0
 SMTP_HOST="" SMTP_PORT=587 SMTP_USER="" SMTP_PASS="" SMTP_TLS=0
 MAIL_NAME="" MAIL_ADDR=""
 APRS_KEY=""
-REPO_URL="https://github.com/DSAdriaanse/event_communications_system.git"
+REPO_URL="https://github.com/DSAdriaanse/Event-Communications-System.git"
 REF="main"
 INSTALL_DIR=""
 PB_VERSION="${PB_VERSION:-0.40.5}"
@@ -294,11 +294,11 @@ else
 fi
 log "Installing application files into $SRC"
 mkdir -p "$SRC"
-for d in pocketbase app scripts deploy; do
+for d in pocketbase app migration deploy; do
   rm -rf "$SRC/$d.new"; mkdir -p "$SRC/$d.new"
   [ -d "$SRC_FROM/$d" ] || continue
   # copy without build junk; keep an existing node_modules for fast upgrades
-  (cd "$SRC_FROM/$d" && tar --exclude=node_modules --exclude=dist --exclude=pb_data -cf - .) | (cd "$SRC/$d.new" && tar -xf -)
+  (cd "$SRC_FROM/$d" && tar --exclude=node_modules --exclude=dist --exclude=pb_data --exclude=base44-export -cf - .) | (cd "$SRC/$d.new" && tar -xf -)
   if [ -d "$SRC/$d/node_modules" ]; then mv "$SRC/$d/node_modules" "$SRC/$d.new/node_modules"; fi
   rm -rf "$SRC/$d"; mv "$SRC/$d.new" "$SRC/$d"
 done
@@ -439,11 +439,11 @@ if [ "$NO_IMPORT" -eq 0 ]; then
   [ -n "$IMPORT_DIR" ] || { [ -d "$SRC_FROM/migration/base44-export" ] && IMPORT_DIR="$SRC_FROM/migration/base44-export" || true; }
   if [ -n "$IMPORT_DIR" ]; then
     [ -d "$IMPORT_DIR" ] || die "--import-dir $IMPORT_DIR not found"
-    log "Importing Base44 export from $IMPORT_DIR"
+    log "Importing legacy export from $IMPORT_DIR"
     extra=(); [ "$IMPORT_ADMIN_PIN" -eq 1 ] && extra+=(--with-admin-pin)
-    node "$SRC/scripts/import-base44.mjs" --dir "$IMPORT_DIR" --url "$BASE" --email "$SU_EMAIL" --password "$SU_PASS" "${extra[@]}"
+    node "$SRC/migration/import-base44.mjs" --dir "$IMPORT_DIR" --url "$BASE" --email "$SU_EMAIL" --password "$SU_PASS" "${extra[@]}"
   else
-    log "No Base44 export supplied - starting with an empty database (use --import-dir later to import)"
+    log "No legacy export supplied - starting with an empty database (use --import-dir later to import)"
   fi
 fi
 

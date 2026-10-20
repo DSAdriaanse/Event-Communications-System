@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
+import { MODULES } from "@/lib/modules";
 import { useEvent } from "@/components/EventContext";
 import { useAuth } from "@/components/PinGate";
 import { Plus, Edit2, Trash2, X, Save, Radio, CheckCircle, Copy, ShieldCheck } from "lucide-react";
@@ -12,7 +13,7 @@ const STATUS_COLORS = {
   Archived: "bg-gray-500/10 text-gray-400 border-gray-500/20",
 };
 
-const empty = { name: "", incident_name: "", date: "", start_datetime: "", end_datetime: "", location: "", net_control_callsign: "", status: "Planning", timezone: "America/Phoenix", pin: "", notes: "" };
+const empty = { name: "", incident_name: "", date: "", start_datetime: "", end_datetime: "", location: "", net_control_callsign: "", status: "Planning", timezone: "America/Phoenix", pin: "", notes: "", disabled_modules: [] };
 
 export default function Events() {
   const [events, setEvents] = useState([]);
@@ -31,8 +32,8 @@ export default function Events() {
   const load = async () => {
     setLoading(true);
     const [data, cfgList] = await Promise.all([
-      base44.entities.Event.list("-date"),
-      base44.entities.AppConfig.list(),
+      db.events.list("-date"),
+      db.appConfig.list(),
     ]);
     setEvents(data);
     const rec = cfgList.find(c => c.key === "admin_pin");
@@ -44,9 +45,9 @@ export default function Events() {
   const saveAdminPin = async () => {
     setSavingPin(true);
     if (adminPinRecord) {
-      await base44.entities.AppConfig.update(adminPinRecord.id, { value: adminPin });
+      await db.appConfig.update(adminPinRecord.id, { value: adminPin });
     } else {
-      const rec = await base44.entities.AppConfig.create({ key: "admin_pin", value: adminPin });
+      const rec = await db.appConfig.create({ key: "admin_pin", value: adminPin });
       setAdminPinRecord(rec);
     }
     setSavingPin(false);
@@ -55,6 +56,11 @@ export default function Events() {
   };
 
   useEffect(() => { load(); }, []);
+
+  const toggleModule = (page) => setForm(f => {
+    const cur = Array.isArray(f.disabled_modules) ? f.disabled_modules : [];
+    return { ...f, disabled_modules: cur.includes(page) ? cur.filter(p => p !== page) : [...cur, page] };
+  });
 
   const openNew = () => { setForm(empty); setEditing(null); setShowForm(true); };
   const openEdit = (e) => { setForm({ ...e }); setEditing(e.id); setShowForm(true); };
@@ -68,9 +74,9 @@ export default function Events() {
     if (data.end_datetime && !data.end_datetime.includes('Z')) {
       data.end_datetime = new Date(data.end_datetime).toISOString();
     }
-    if (editing) await base44.entities.Event.update(editing, data);
+    if (editing) await db.events.update(editing, data);
     else {
-      const created = await base44.entities.Event.create(data);
+      const created = await db.events.create(data);
       if (form.status === "Active") selectEvent(created.id);
     }
     setShowForm(false);
@@ -80,7 +86,7 @@ export default function Events() {
 
   const del = async (id) => {
     if (confirm("Delete this event? This does not delete associated data.")) {
-      await base44.entities.Event.delete(id);
+      await db.events.delete(id);
       load();
       loadEvents();
     }
@@ -93,7 +99,7 @@ export default function Events() {
   const duplicate = async (ev) => {
     if (!window.confirm(`Duplicate "${ev.name}"? All data except communications will be copied.`)) return;
     // Create new event (reset date and status to Planning)
-    const newEvent = await base44.entities.Event.create({
+    const newEvent = await db.events.create({
       name: ev.name + " (Copy)",
       incident_name: ev.incident_name,
       location: ev.location,
@@ -103,32 +109,33 @@ export default function Events() {
       discussion: ev.discussion,
       conops_comms: ev.conops_comms,
       documents_url: ev.documents_url,
+      disabled_modules: ev.disabled_modules || [],
     });
     const newId = newEvent.id;
     const strip = ({ id, created_date, updated_date, created_by, ...rest }) => rest;
     const [operators, stations, assignments, frequencies] = await Promise.all([
-      base44.entities.Operator.filter({ event_id: ev.id }),
-      base44.entities.AideStation.filter({ event_id: ev.id }),
-      base44.entities.Assignment.filter({ event_id: ev.id }),
-      base44.entities.Frequency.filter({ event_id: ev.id }),
+      db.operators.filter({ event_id: ev.id }),
+      db.aideStations.filter({ event_id: ev.id }),
+      db.assignments.filter({ event_id: ev.id }),
+      db.frequencies.filter({ event_id: ev.id }),
     ]);
     // Create frequencies first and build an old-ID → new-ID map
     const freqIdMap = {};
     for (const f of frequencies) {
-      const newFreq = await base44.entities.Frequency.create({ ...strip(f), event_id: newId });
+      const newFreq = await db.frequencies.create({ ...strip(f), event_id: newId });
       freqIdMap[f.id] = newFreq.id;
     }
-    for (const o of operators) await base44.entities.Operator.create({ ...strip(o), event_id: newId });
+    for (const o of operators) await db.operators.create({ ...strip(o), event_id: newId });
     // Remap frequency IDs on stations so they reference the new event's frequencies
     for (const s of stations) {
-      await base44.entities.AideStation.create({
+      await db.aideStations.create({
         ...strip(s),
         event_id: newId,
         primary_frequency_id: freqIdMap[s.primary_frequency_id] || null,
         backup_frequency_id: freqIdMap[s.backup_frequency_id] || null,
       });
     }
-    for (const a of assignments) await base44.entities.Assignment.create({ ...strip(a), event_id: newId, status: "Scheduled" });
+    for (const a of assignments) await db.assignments.create({ ...strip(a), event_id: newId, status: "Scheduled" });
     load();
     loadEvents();
   };
@@ -293,6 +300,31 @@ export default function Events() {
                 <textarea value={form.notes || ""} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none resize-none" />
               </div>
+              {isAdmin && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-gray-400">Modules <span className="text-gray-600">(unchecked = hidden from operators of this event)</span></label>
+                    <div className="flex gap-3 text-xs">
+                      <button type="button" onClick={() => setForm(f => ({ ...f, disabled_modules: [] }))} className="text-cyan-400 hover:text-cyan-300">All on</button>
+                      <button type="button" onClick={() => setForm(f => ({ ...f, disabled_modules: MODULES.map(m => m.page) }))} className="text-gray-500 hover:text-gray-300">All off</button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 bg-gray-800/50 border border-gray-800 rounded-lg p-3">
+                    {MODULES.map(({ page, label }) => (
+                      <label key={page} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={!(form.disabled_modules || []).includes(page)}
+                          onChange={() => toggleModule(page)}
+                          className="accent-cyan-500"
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-gray-600 mt-1">Admins always see every module (disabled ones are dimmed in the sidebar).</p>
+                </div>
+              )}
             </div>
             <div className="px-6 py-4 border-t border-gray-800 flex justify-end gap-3">
               <button onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>

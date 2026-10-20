@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { db } from "@/api/ecs";
 import { pb } from "@/api/pb";
 
 const EventContext = createContext(null);
@@ -12,7 +12,7 @@ export function EventProvider({ children }) {
   const loadEvents = async () => {
     let data = [];
     if (pb.authStore.isValid) {
-      try { data = await base44.entities.Event.list("-date"); } catch { data = []; }
+      try { data = await db.events.list("-date"); } catch { data = []; }
     }
     setEvents(data);
     setLoading(false);
@@ -27,7 +27,11 @@ export function EventProvider({ children }) {
   // Events are only readable with a session, so (re)load whenever the login state changes.
   useEffect(() => {
     loadEvents();
-    return pb.authStore.onChange(() => { loadEvents(); });
+    const offAuth = pb.authStore.onChange(() => { loadEvents(); });
+    // Event settings (e.g. module switches) change live for everyone viewing the event.
+    let t = null;
+    const offLive = db.events.subscribe(() => { clearTimeout(t); t = setTimeout(loadEvents, 300); });
+    return () => { offAuth(); offLive(); clearTimeout(t); };
   }, []);
 
   const selectEvent = (id) => {
