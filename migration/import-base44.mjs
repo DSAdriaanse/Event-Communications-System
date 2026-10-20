@@ -9,6 +9,9 @@
 // * Original Base44 record ids and created/updated timestamps are preserved, so every cross
 //   reference (event_id, station ids, participant ids ...) stays valid.
 // * Re-runnable: records whose id already exists are skipped.
+// * Orphans are skipped: a record is left out when its event is not in the export, or when a link
+//   (station, frequency, operator, participant, log entry) points at a record that is not in the
+//   export. That cascades: a record that pointed at a skipped one is skipped too. Every skip is listed.
 // * Needs only Node 18+ (no npm dependencies).
 //
 // Options
@@ -17,6 +20,7 @@
 //   --url URL           PocketBase base URL                      (env PB_URL,   default http://127.0.0.1:8090)
 //   --email / --password  superuser credentials                  (env PB_SUPERUSER_EMAIL / PB_SUPERUSER_PASSWORD)
 //   --with-admin-pin    also import the Base44 `admin_pin` config (default: keep the PIN chosen at install)
+//   --keep-orphans      also import records whose links point at nothing (default: skip them, see below)
 //   --dry-run           parse and validate only, write nothing
 
 import fs from "node:fs";
@@ -38,6 +42,7 @@ const EMAIL = opt("email", "PB_SUPERUSER_EMAIL");
 const PASSWORD = opt("password", "PB_SUPERUSER_PASSWORD");
 const WITH_ADMIN_PIN = flag("with-admin-pin");
 const DRY = flag("dry-run");
+const KEEP_ORPHANS = flag("keep-orphans");
 
 if (flag("help") || flag("h")) {
   console.log(fs.readFileSync(new URL(import.meta.url), "utf8").split("\n").slice(1, 20).map((l) => l.replace(/^\/\/ ?/, "")).join("\n"));
@@ -152,22 +157,59 @@ if (!DRY) {
   token = r.json.token;
 }
 
-const eventIds = new Set();
-const eventLogIds = new Set();
-let bulletinsDangling = 0;
+// ---- read every table first: finding orphans needs to see all of them
+const ROWS = {};
+for (const { file, col } of ENTITIES) {
+  if (JSON_DATA) {
+    if (Array.isArray(JSON_DATA[file])) ROWS[col] = JSON_DATA[file].map(stringifyRow);
+  } else {
+    const fp = findFile(file);
+    if (fp) ROWS[col] = parseCSV(fs.readFileSync(fp, "utf8"));
+  }
+}
+
+// Links between records. Only event_id is a real PocketBase relation; the rest are plain text ids
+// that Base44 never enforced, so deleted records left dead links behind.
+const LINKS = [
+  ["aide_stations", "primary_frequency_id", "frequencies"], ["aide_stations", "backup_frequency_id", "frequencies"],
+  ["assignments", "operator_id", "operators"], ["assignments", "station_id", "aide_stations"],
+  ["participants", "current_location_station_id", "aide_stations"],
+  ["participant_status_updates", "participant_id", "participants"], ["participant_status_updates", "aide_station_id", "aide_stations"],
+  ["bulletins", "event_log_id", "event_logs"],
+];
+
+/** Which records to leave out, and why. A skipped record takes the records that point at it with it. */
+function findOrphans(rows, keepDeadLinks) {
+  const alive = Object.fromEntries(Object.entries(rows).map(([c, r]) => [c, new Set(r.map((x) => x.id))]));
+  const skipped = new Map(); // "col:id" -> reason
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const [col, list] of Object.entries(rows)) {
+      if (col === "events" || col === "app_config") continue;
+      for (const r of list) {
+        const key = col + ":" + r.id;
+        if (skipped.has(key)) continue;
+        let why = "";
+        if (!(alive.events || new Set()).has(r.event_id)) why = "its event is not in the export";
+        else if (!keepDeadLinks) {
+          for (const [c, f, parent] of LINKS) {
+            if (c === col && r[f] && !(alive[parent] || new Set()).has(r[f])) { why = `${f} points at a record in ${parent} that is not in the export`; break; }
+          }
+        }
+        if (why) { skipped.set(key, why); alive[col].delete(r.id); changed = true; }
+      }
+    }
+  }
+  return skipped;
+}
+const ORPHANS = findOrphans(ROWS, KEEP_ORPHANS);
+
 const summary = [];
 let failures = 0;
 
 for (const { file, col } of ENTITIES) {
-  let rows;
-  if (JSON_DATA) {
-    if (!Array.isArray(JSON_DATA[file])) { summary.push([col, "no list", 0, 0, 0, 0]); continue; }
-    rows = JSON_DATA[file].map(stringifyRow);
-  } else {
-    const fp = findFile(file);
-    if (!fp) { summary.push([col, "no file", 0, 0, 0, 0]); continue; }
-    rows = parseCSV(fs.readFileSync(fp, "utf8"));
-  }
+  const rows = ROWS[col];
+  if (!rows) { summary.push([col, JSON_DATA ? "no list" : "no file", 0, 0, 0, 0]); continue; }
 
   let fields = {};
   if (!DRY) {
@@ -185,11 +227,8 @@ for (const { file, col } of ENTITIES) {
       if (raw.key === "aprs_last_run") { skipped++; continue; }
       if (raw.key === "admin_pin" && !WITH_ADMIN_PIN) { skipped++; continue; }
     }
+    if (ORPHANS.has(col + ":" + raw.id)) { orphans++; continue; }
     const rec = convert(raw, fields);
-    if (col === "events") eventIds.add(rec.id);
-    if (col === "event_logs") eventLogIds.add(rec.id);
-    if (col === "bulletins" && rec.event_log_id && !eventLogIds.has(rec.event_log_id)) bulletinsDangling++;
-    else if ("event_id" in fields && !eventIds.has(rec.event_id)) { orphans++; continue; }
     if (DRY) { created++; continue; }
 
     const exists = await api("GET", `/api/collections/${col}/records/${rec.id}`);
@@ -213,6 +252,12 @@ for (const { file, col } of ENTITIES) {
 console.log("\n" + (DRY ? "DRY RUN — nothing written\n" : ""));
 console.log("collection".padEnd(30), (JSON_DATA ? "json" : "csv").padEnd(10), "created".padEnd(9), "skipped".padEnd(9), "orphans".padEnd(9), "errors");
 for (const s of summary) console.log(String(s[0]).padEnd(30), String(s[1]).padEnd(10), String(s[2]).padEnd(9), String(s[3]).padEnd(9), String(s[4]).padEnd(9), s[5]);
-if (bulletinsDangling) console.log(`\nNote: ${bulletinsDangling} bulletin(s) point at an event log entry that is not in the export (the entry was deleted in Base44). They are imported as they are; the link just leads nowhere.`);
+if (ORPHANS.size) {
+  console.log(`\nSkipped as orphans (${ORPHANS.size}):`);
+  const groups = new Map();
+  for (const [key, why] of ORPHANS) { const col = key.split(":")[0]; const k = col + " | " + why; (groups.get(k) || groups.set(k, []).get(k)).push(key.split(":")[1]); }
+  for (const [k, ids] of groups) { const [col, why] = k.split(" | "); console.log(`  ${String(ids.length).padStart(4)}  ${col}: ${why}  (ids: ${ids.slice(0, 5).join(", ")}${ids.length > 5 ? ", ..." : ""})`); }
+  console.log("  Pass --keep-orphans to import records whose links point at nothing (a record whose event is missing is always skipped).");
+}
 if (!WITH_ADMIN_PIN) console.log("\nNote: Base44 admin_pin was NOT imported (pass --with-admin-pin to import it). The PIN chosen at install time stays active.");
 process.exit(failures ? 1 : 0);

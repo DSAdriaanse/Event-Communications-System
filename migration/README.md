@@ -19,7 +19,7 @@ instead of `--json`.
 * The Base44 admin PIN is **not** imported (the PIN chosen at install time stays); add `--with-admin-pin` to import it.
 * `--dry-run` parses everything and writes nothing. Run it first and check the counts against the old app.
 * Empty numbers (latitude, longitude, quantity) are stored as 0, which the app treats as "not set".
-* A bulletin may point at an event log entry that no longer exists in Base44; the importer reports how many and imports them as they are.
+* Orphans are skipped by default and listed at the end of the run: a record whose event is not in the export, or whose link (station, frequency, operator, participant, log entry) points at a record that is not in the export. A record that pointed at a skipped one is skipped too. In your own export this is two bulletins whose log entry was deleted in Base44. Pass `--keep-orphans` to import records with dead links anyway (a record whose event is missing is always skipped, because the database requires the event).
 * The JSON export names the secrets the old app used (`APRS_FI_API_KEY`, `BREVO_API_KEY`) without their values. Enter them again on the new server.
 * Users in the export are not imported: ECS signs in with PINs.
 * Documents are links; any pointing at Base44 file storage (`EventDocument.file_url`) die with the Base44 app. Download
