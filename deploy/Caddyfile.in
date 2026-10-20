@@ -1,6 +1,0 @@
-# ECS (@@INSTANCE@@) - managed by deploy/bootstrap.sh
-@@DOMAIN@@ {
-    reverse_proxy 127.0.0.1:@@PORT@@ {
-        flush_interval -1
-    }
-}

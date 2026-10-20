@@ -1,0 +1,58 @@
+# Runs on every pull request and push to main/dev: front-end build, deploy-script tests, and a smoke
+# test that starts a real PocketBase with the hooks and migrations from this repository.
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: app/package-lock.json }
+      - run: npm ci
+        working-directory: app
+      - run: npm run build
+        working-directory: app
+
+  deploy-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: for f in deploy/*.sh deploy/test/*.sh; do bash -n "$f"; done
+      - run: bash deploy/test/install.test.sh
+
+  backend-smoke:
+    runs-on: ubuntu-latest
+    env:
+      PB_VERSION: "0.40.5"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install PocketBase
+        # Not into the repo root: the repo has a folder named pocketbase/, so the binary cannot live there.
+        run: |
+          mkdir -p "$RUNNER_TEMP/pb"
+          curl -fsSL -o "$RUNNER_TEMP/pb/pb.zip" "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_amd64.zip"
+          unzip -q "$RUNNER_TEMP/pb/pb.zip" pocketbase -d "$RUNNER_TEMP/pb"
+          echo "PB=$RUNNER_TEMP/pb/pocketbase" >> "$GITHUB_ENV"
+      - name: Start PocketBase the way the systemd unit does
+        run: |
+          "$PB" superuser upsert ci@test.local ci-test-pass-1234 --dir ./ci-data --migrationsDir pocketbase/pb_migrations
+          ECS_ADMIN_PIN=246810 "$PB" serve --http 127.0.0.1:8090 --dir ./ci-data \
+            --migrationsDir pocketbase/pb_migrations --hooksDir pocketbase/pb_hooks --indexFallback=true > serve.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8090/api/health >/dev/null && break; sleep 1; done
+      - name: Health, PIN seeding and settings script
+        run: |
+          curl -fsS http://127.0.0.1:8090/api/health
+          curl -fsS http://127.0.0.1:8090/api/ecs/health
+          curl -fsS http://127.0.0.1:8090/api/ecs/public-events >/dev/null
+          grep -q "admin PIN seeded" serve.log
+          PB_URL=http://127.0.0.1:8090 PB_SUPERUSER_EMAIL=ci@test.local PB_SUPERUSER_PASSWORD=ci-test-pass-1234 \
+            PB_APP_URL=https://ecs.example PB_TRUSTED_PROXY=1 node deploy/pb-settings.mjs
+      - if: failure()
+        run: cat serve.log
