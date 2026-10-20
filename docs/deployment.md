@@ -188,6 +188,14 @@ node migration/import-base44.mjs --dir ./migration/base44-export --url https://e
 
 Or start empty and create events in the app.
 
+## Orphaned records
+
+Only an event's data is tied to the event by the database. Links between records (a status update to its participant, an assignment to its station, a bulletin to its log entry) are plain text ids. To keep them from going stale:
+
+- Deleting a station, frequency, operator, participant or log entry clears the links that pointed at it, in the same step. Deleting a participant also deletes its status updates. Nothing else is touched; an assignment keeps its callsign and station name.
+- Every night at 03:30 the server repairs dead links that already exist (for example from imported data). Set `ECS_ORPHAN_CLEANUP=off` in `/etc/<name>/env` to switch that off.
+- Admins can check and repair by hand in the app: Events, "Data check". The same is available as `GET /api/ecs/admin/orphans` (report) and `POST /api/ecs/admin/orphans/clean` (repair) for admins and the PocketBase superuser.
+
 ## Backups
 
 `deploy/backup.sh` takes a consistent SQLite backup of the database and uploads and prunes after 14 days. Setup schedules it hourly through `/etc/cron.d/<name>`, and `ecs-update` takes one before every release. Copy `/var/backups/ecs` off the machine too (rsync, rclone, restic). Restore: stop the service, unpack the tarball into `/var/lib/ecs/pb_data`, fix ownership (`chown -R ecs:ecs`), start. PINs are in the database in clear text, so treat backups as secrets.
