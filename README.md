@@ -15,8 +15,8 @@ A **self-hosted, single-binary stack on PocketBase**:
 ## Install on a Debian / Ubuntu server
 
 ```bash
-git clone https://github.com/DSAdriaanse/Event-Communication-Systems.git
-cd Event-Communication-Systems
+git clone https://github.com/DSAdriaanse/Event-Communications-System.git
+cd Event-Communications-System
 sudo ./deploy/bootstrap.sh --domain ecs.example.org          # with nginx/Caddy site
 sudo ./deploy/bootstrap.sh                                    # plain, no proxy (LAN)
 ```
@@ -25,7 +25,7 @@ sudo ./deploy/bootstrap.sh                                    # plain, no proxy 
 
 ```bash
 GIT_SSH_COMMAND="ssh -i /root/.ssh/ecs-deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
-  git clone -b main git@github.com:DSAdriaanse/Event-Communication-Systems.git /opt/ecs-src
+  git clone -b main git@github.com:DSAdriaanse/Event-Communications-System.git /opt/ecs-src
 
 bash /opt/ecs-src/deploy/bootstrap.sh --branch main \
   --domain ecs.apps.swcrs.org --email you@example.org --superuser-email you@example.org

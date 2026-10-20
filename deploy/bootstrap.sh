@@ -2,7 +2,7 @@
 # ECS (Event Communications System) - bootstrap for a blank (or shared) Debian/Ubuntu server.
 #
 #   sudo ./deploy/bootstrap.sh [options]
-#   curl -fsSL https://raw.githubusercontent.com/DSAdriaanse/Event-Communication-Systems/main/deploy/bootstrap.sh | sudo bash -s -- [options]
+#   curl -fsSL https://raw.githubusercontent.com/DSAdriaanse/Event-Communications-System/main/deploy/bootstrap.sh | sudo bash -s -- [options]
 #
 # Safe to run next to other PocketBase instances: everything is namespaced by --instance
 # (own user, own systemd unit, own /opt/<instance> + /etc/<instance> directories, own free TCP port).
@@ -57,7 +57,7 @@ IMPORT_ADMIN_PIN=0
 SMTP_HOST="" SMTP_PORT=587 SMTP_USER="" SMTP_PASS="" SMTP_TLS=0
 MAIL_NAME="" MAIL_ADDR=""
 APRS_KEY=""
-REPO_URL="https://github.com/DSAdriaanse/Event-Communication-Systems.git"
+REPO_URL="https://github.com/DSAdriaanse/Event-Communications-System.git"
 REF="main"
 INSTALL_DIR=""
 PB_VERSION="${PB_VERSION:-0.40.5}"
