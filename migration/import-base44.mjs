@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// One-time legacy import: Base44 CSV export (Event_export.csv, Operator_export.csv, ...) into the ECS PocketBase.
+// One-time legacy import: a Base44 export into the ECS PocketBase. The export is either the single JSON file
+// from the app's "Export all data" button, or a folder of CSV files (Event_export.csv, Operator_export.csv, ...).
 //
-//   node migration/import-base44.mjs --dir ./migration/base44-export \
+//   node migration/import-base44.mjs --json ./migration/base44-export/export.json \
 //        --url http://127.0.0.1:8090 --email admin@example.com --password '...'
+//   node migration/import-base44.mjs --dir ./migration/base44-export  ...        (CSV folder)
 //
 // * Original Base44 record ids and created/updated timestamps are preserved, so every cross
 //   reference (event_id, station ids, participant ids ...) stays valid.
@@ -10,6 +12,7 @@
 // * Needs only Node 18+ (no npm dependencies).
 //
 // Options
+//   --json FILE         the single JSON export file (use this or --dir)
 //   --dir DIR           folder holding the *_export.csv files (file name prefixes like "ab12cd34-" are fine)
 //   --url URL           PocketBase base URL                      (env PB_URL,   default http://127.0.0.1:8090)
 //   --email / --password  superuser credentials                  (env PB_SUPERUSER_EMAIL / PB_SUPERUSER_PASSWORD)
@@ -28,6 +31,7 @@ const opt = (name, env, dflt) => {
 };
 const flag = (name) => args.includes("--" + name);
 
+const JSON_FILE = opt("json", null);
 const DIR = opt("dir", null, "./migration/base44-export");
 const URL_ = opt("url", "PB_URL", "http://127.0.0.1:8090").replace(/\/+$/, "");
 const EMAIL = opt("email", "PB_SUPERUSER_EMAIL");
@@ -62,6 +66,19 @@ function parseCSV(text) {
   if (field !== "" || row.length) { row.push(field); rows.push(row); }
   const [head, ...body] = rows;
   return body.map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
+}
+
+// ---------------------------------------------------------------- JSON export
+// The JSON keeps real types (true, 5, null). Turn every value into the text a CSV cell holds, so the
+// rest of the importer sees the same thing from either source.
+const stringifyRow = (r) =>
+  Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v)]));
+
+let JSON_DATA = null;
+if (JSON_FILE) {
+  if (!fs.existsSync(JSON_FILE)) { console.error(`File not found: ${JSON_FILE}`); process.exit(2); }
+  try { JSON_DATA = JSON.parse(fs.readFileSync(JSON_FILE, "utf8").replace(/^\uFEFF/, "")); }
+  catch (e) { console.error(`${JSON_FILE} is not valid JSON: ${e.message}`); process.exit(2); }
 }
 
 // ---------------------------------------------------------------- mapping
@@ -123,7 +140,10 @@ function findFile(name) {
   return hit.length ? path.join(DIR, hit[0]) : null;
 }
 
-if (!fs.existsSync(DIR)) { console.error(`Directory not found: ${DIR}`); process.exit(2); }
+if (!JSON_DATA && !fs.existsSync(DIR)) { console.error(`Directory not found: ${DIR} (use --json FILE for the single JSON export)`); process.exit(2); }
+if (JSON_DATA && !ENTITIES.some((e) => Array.isArray(JSON_DATA[e.file]))) {
+  console.error(`${JSON_FILE} does not look like a Base44 export: none of ${ENTITIES.map((e) => e.file).join(", ")} is a list.`); process.exit(2);
+}
 
 if (!DRY) {
   if (!EMAIL || !PASSWORD) { console.error("Superuser credentials required (--email/--password or PB_SUPERUSER_EMAIL/PB_SUPERUSER_PASSWORD)."); process.exit(2); }
@@ -133,13 +153,21 @@ if (!DRY) {
 }
 
 const eventIds = new Set();
+const eventLogIds = new Set();
+let bulletinsDangling = 0;
 const summary = [];
 let failures = 0;
 
 for (const { file, col } of ENTITIES) {
-  const fp = findFile(file);
-  if (!fp) { summary.push([col, "no file", 0, 0, 0, 0]); continue; }
-  const rows = parseCSV(fs.readFileSync(fp, "utf8"));
+  let rows;
+  if (JSON_DATA) {
+    if (!Array.isArray(JSON_DATA[file])) { summary.push([col, "no list", 0, 0, 0, 0]); continue; }
+    rows = JSON_DATA[file].map(stringifyRow);
+  } else {
+    const fp = findFile(file);
+    if (!fp) { summary.push([col, "no file", 0, 0, 0, 0]); continue; }
+    rows = parseCSV(fs.readFileSync(fp, "utf8"));
+  }
 
   let fields = {};
   if (!DRY) {
@@ -159,6 +187,8 @@ for (const { file, col } of ENTITIES) {
     }
     const rec = convert(raw, fields);
     if (col === "events") eventIds.add(rec.id);
+    if (col === "event_logs") eventLogIds.add(rec.id);
+    if (col === "bulletins" && rec.event_log_id && !eventLogIds.has(rec.event_log_id)) bulletinsDangling++;
     else if ("event_id" in fields && !eventIds.has(rec.event_id)) { orphans++; continue; }
     if (DRY) { created++; continue; }
 
@@ -181,7 +211,8 @@ for (const { file, col } of ENTITIES) {
 }
 
 console.log("\n" + (DRY ? "DRY RUN — nothing written\n" : ""));
-console.log("collection".padEnd(30), "csv".padEnd(10), "created".padEnd(9), "skipped".padEnd(9), "orphans".padEnd(9), "errors");
+console.log("collection".padEnd(30), (JSON_DATA ? "json" : "csv").padEnd(10), "created".padEnd(9), "skipped".padEnd(9), "orphans".padEnd(9), "errors");
 for (const s of summary) console.log(String(s[0]).padEnd(30), String(s[1]).padEnd(10), String(s[2]).padEnd(9), String(s[3]).padEnd(9), String(s[4]).padEnd(9), s[5]);
+if (bulletinsDangling) console.log(`\nNote: ${bulletinsDangling} bulletin(s) point at an event log entry that is not in the export (the entry was deleted in Base44). They are imported as they are; the link just leads nowhere.`);
 if (!WITH_ADMIN_PIN) console.log("\nNote: Base44 admin_pin was NOT imported (pass --with-admin-pin to import it). The PIN chosen at install time stays active.");
 process.exit(failures ? 1 : 0);

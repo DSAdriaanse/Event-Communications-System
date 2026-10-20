@@ -407,7 +407,7 @@ PROXY
 Next:
   1. Optional: edit $ENV_FILE (APRS key, mail sender), then:  systemctl restart $NAME
   2. Mail (bulletins, ICS forms) needs an SMTP server: set it in https://$DOMAIN/_/ under Settings > Mail settings, unless you passed --smtp-host.
-  3. To bring over data from the old app, from your laptop:  node migration/import-base44.mjs --dir <export-folder> --url https://$DOMAIN --email <superuser> --password '...' --dry-run
+  3. To bring over data from the old app, from your laptop:  node migration/import-base44.mjs --json <export.json> --url https://$DOMAIN --email <superuser> --password '...' --dry-run
   4. Harden SSH once your key login works: PasswordAuthentication no, PermitRootLogin no in /etc/ssh/sshd_config.d/
   5. Copy $BACKUP_DIR off this machine regularly.
 NEXT

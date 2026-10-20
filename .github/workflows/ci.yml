@@ -54,5 +54,15 @@ jobs:
           grep -q "admin PIN seeded" serve.log
           PB_URL=http://127.0.0.1:8090 PB_SUPERUSER_EMAIL=ci@test.local PB_SUPERUSER_PASSWORD=ci-test-pass-1234 \
             PB_APP_URL=https://ecs.example PB_TRUSTED_PROXY=1 node deploy/pb-settings.mjs
+      - name: Importer tests, then a real import of the made-up fixture, run twice (the second run must skip everything)
+        run: |
+          node --test migration/import-base44.test.mjs
+          export PB_URL=http://127.0.0.1:8090 PB_SUPERUSER_EMAIL=ci@test.local PB_SUPERUSER_PASSWORD=ci-test-pass-1234
+          node migration/import-base44.mjs --json migration/test/fixture-export.json | tee import1.log
+          grep -qE '^events +1 rows +1 +0 +0 +0' import1.log
+          grep -qE '^operators +2 rows +2 +0 +0 +0' import1.log
+          node migration/import-base44.mjs --json migration/test/fixture-export.json | tee import2.log
+          grep -qE '^events +1 rows +0 +1 +0 +0' import2.log
+          grep -qE '^operators +2 rows +0 +2 +0 +0' import2.log
       - if: failure()
         run: cat serve.log
