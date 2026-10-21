@@ -96,9 +96,7 @@ export default function BibTracker() {
 
   const handleDeleteParticipant = async () => {
     if (!selectedParticipant) return;
-    // Delete all updates for this participant first
-    const participantUpdates = updates.filter(u => u.participant_id === selectedParticipant.id);
-    await Promise.all(participantUpdates.map(u => db.participantStatusUpdates.delete(u.id)));
+    // One call: the server deletes the participant's status updates in the same transaction.
     await db.participants.delete(selectedParticipant.id);
     setSelectedParticipant(null);
     await load();

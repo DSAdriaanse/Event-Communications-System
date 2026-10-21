@@ -1,0 +1,268 @@
+{
+ "meta": {
+  "app_name": "Fixture (synthetic test data)",
+  "export_format_version": "1"
+ },
+ "Event": [
+  {
+   "name": "Fixture Event",
+   "date": "2026-01-02",
+   "start_datetime": "2026-01-02T03:04:05.000Z",
+   "end_datetime": "2026-01-02T03:04:05.000Z",
+   "status": "Planning",
+   "pin": "999999",
+   "id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  }
+ ],
+ "AideStation": [
+  {
+   "name": "Station A",
+   "station_id": "A1",
+   "latitude": null,
+   "longitude": 1,
+   "type": "Aide Station",
+   "status": "Active",
+   "start_datetime": "2026-01-02T03:04:05.000Z",
+   "end_datetime": "2026-01-02T03:04:05.000Z",
+   "assets": [],
+   "sort_order": 1,
+   "position_source": "None",
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "id": "aaaaaaaaaaaaaaaaaaaa0011",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  },
+  {
+   "name": "Station B",
+   "station_id": "B1",
+   "latitude": 32.1,
+   "longitude": -110.9,
+   "type": "Aide Station",
+   "status": "Active",
+   "start_datetime": "2026-01-02T03:04:05.000Z",
+   "end_datetime": "2026-01-02T03:04:05.000Z",
+   "assets": [
+    "tent"
+   ],
+   "sort_order": 1,
+   "position_source": "None",
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "id": "aaaaaaaaaaaaaaaaaaaa0012",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  }
+ ],
+ "Frequency": [
+  {
+   "name": "Freq 1",
+   "frequency_mhz": 1,
+   "mode": "FM",
+   "use": "Primary Net",
+   "sort_order": 1,
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "id": "aaaaaaaaaaaaaaaaaaaa0021",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  }
+ ],
+ "Operator": [
+  {
+   "callsign": "TEST1",
+   "full_name": "Op One",
+   "license_class": "Technician",
+   "certifications": [],
+   "status": "Available",
+   "last_heard": "2026-01-02T03:04:05.000Z",
+   "latitude": 1,
+   "longitude": 1,
+   "position_source": "None",
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "id": "aaaaaaaaaaaaaaaaaaaa0031",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  },
+  {
+   "callsign": "TEST2",
+   "full_name": "Op Two",
+   "license_class": "Technician",
+   "certifications": [],
+   "status": "Available",
+   "last_heard": "2026-01-02T03:04:05.000Z",
+   "latitude": null,
+   "longitude": 1,
+   "position_source": "None",
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "id": "aaaaaaaaaaaaaaaaaaaa0032",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  }
+ ],
+ "Assignment": [
+  {
+   "operator_callsign": "TEST1",
+   "station_name": "Station A",
+   "role": "Net Control",
+   "start_time": "2026-01-02T03:04:05.000Z",
+   "end_time": "2026-01-02T03:04:05.000Z",
+   "status": "Scheduled",
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "operator_id": null,
+   "station_id": null,
+   "id": "aaaaaaaaaaaaaaaaaaaa0041",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  }
+ ],
+ "EventLog": [
+  {
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "type": "communication",
+   "content": "Test content",
+   "priority": "Routine",
+   "message_type": "Net Check-in",
+   "acknowledged": false,
+   "id": "aaaaaaaaaaaaaaaaaaaa0051",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  },
+  {
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "type": "communication",
+   "content": "Test content",
+   "priority": "Routine",
+   "message_type": "Net Check-in",
+   "acknowledged": false,
+   "id": "aaaaaaaaaaaaaaaaaaaa0052",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  }
+ ],
+ "ResourceRequest": [
+  {
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "type": "SAG",
+   "item": "Test item",
+   "quantity": null,
+   "status": "Pending",
+   "priority": "Routine",
+   "id": "aaaaaaaaaaaaaaaaaaaa0061",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  }
+ ],
+ "Participant": [
+  {
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "bib_number": "Test bib_number",
+   "runner_name": "Test runner_name",
+   "status": "Active",
+   "last_update_date": "2026-01-02T03:04:05.000Z",
+   "id": "aaaaaaaaaaaaaaaaaaaa0071",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  }
+ ],
+ "ParticipantStatusUpdate": [
+  {
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "participant_id": "aaaaaaaaaaaaaaaaaaaa0071",
+   "bib_number": "Test bib_number",
+   "update_type": "Seen",
+   "timestamp": "2026-01-02T03:04:05.000Z",
+   "id": "aaaaaaaaaaaaaaaaaaaa0081",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  }
+ ],
+ "EventDocument": [
+  {
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "name": "Test name",
+   "file_url": "Test file_url",
+   "size_bytes": 1,
+   "id": "aaaaaaaaaaaaaaaaaaaa0091",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  }
+ ],
+ "Bulletin": [
+  {
+   "event_id": "aaaaaaaaaaaaaaaaaaaa0001",
+   "subject": "Test subject",
+   "priority": "Routine",
+   "message": "Test message",
+   "sent_count": 1,
+   "event_log_id": "aaaaaaaaaaaaaaaaaaaa9999",
+   "id": "aaaaaaaaaaaaaaaaaaaa0101",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  }
+ ],
+ "AppConfig": [
+  {
+   "key": "nco_tasks",
+   "value": "[]",
+   "id": "aaaaaaaaaaaaaaaaaaaa0111",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  },
+  {
+   "key": "aprs_last_run",
+   "value": "x",
+   "id": "aaaaaaaaaaaaaaaaaaaa0112",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  },
+  {
+   "key": "admin_pin",
+   "value": "000000",
+   "id": "aaaaaaaaaaaaaaaaaaaa0113",
+   "created_date": "2026-01-02T03:04:05.123000",
+   "updated_date": "2026-01-02T03:04:06.123000",
+   "created_by_id": "anonymous",
+   "is_sample": false
+  }
+ ],
+ "users": [
+  {
+   "id": "aaaaaaaaaaaaaaaaaaaa0121",
+   "email": "nobody@example.invalid",
+   "full_name": "Nobody",
+   "role": "user"
+  }
+ ]
+}

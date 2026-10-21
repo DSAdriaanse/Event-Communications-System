@@ -182,11 +182,19 @@ The admin UI is at `/_/`. Restrict it by IP in `nginx.conf` if you like.
 To bring data over from the old Base44 app, see [`migration/README.md`](../migration/README.md). From any computer with Node 18 or later:
 
 ```bash
-node migration/import-base44.mjs --dir ./migration/base44-export --url https://ecs.apps.swcrs.org \
+node migration/import-base44.mjs --json ./migration/base44-export/export.json --url https://ecs.apps.swcrs.org \
      --email you@example.org --password '...' --dry-run     # check the counts, then run again without --dry-run
 ```
 
 Or start empty and create events in the app.
+
+## Orphaned records
+
+Only an event's data is tied to the event by the database. Links between records (a status update to its participant, an assignment to its station, a bulletin to its log entry) are plain text ids. To keep them from going stale:
+
+- Deleting a station, frequency, operator, participant or log entry clears the links that pointed at it, in the same step. Deleting a participant also deletes its status updates. Nothing else is touched; an assignment keeps its callsign and station name.
+- Every night at 03:30 the server repairs dead links that already exist (for example from imported data). Set `ECS_ORPHAN_CLEANUP=off` in `/etc/<name>/env` to switch that off.
+- Admins can check and repair by hand in the app: Events, "Data check". The same is available as `GET /api/ecs/admin/orphans` (report) and `POST /api/ecs/admin/orphans/clean` (repair) for admins and the PocketBase superuser.
 
 ## Backups
 
