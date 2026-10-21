@@ -182,7 +182,7 @@ The admin UI is at `/_/`. Restrict it by IP in `nginx.conf` if you like.
 To bring data over from the old Base44 app, see [`migration/README.md`](../migration/README.md). From any computer with Node 18 or later:
 
 ```bash
-node migration/import-base44.mjs --dir ./migration/base44-export --url https://ecs.apps.swcrs.org \
+node migration/import-base44.mjs --json ./migration/base44-export/export.json --url https://ecs.apps.swcrs.org \
      --email you@example.org --password '...' --dry-run     # check the counts, then run again without --dry-run
 ```
 

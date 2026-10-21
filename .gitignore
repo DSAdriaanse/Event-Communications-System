@@ -10,3 +10,4 @@ pb_data/
 .env.*
 !.env.example
 .DS_Store
+*-export-*.json
