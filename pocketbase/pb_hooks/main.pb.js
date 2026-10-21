@@ -48,6 +48,39 @@ cronAdd("ecs_aprs_fi", "*/5 * * * *", () => {
   try { require(`${__hooks}/lib/functions.js`).aprsFiTracker(); } catch (err) { console.log("[ecs] aprs cron:", String(err)); }
 });
 
+// ---------------------------------------------------------------- orphaned links
+// Deleting a station, frequency, operator, participant or log entry clears the links that pointed at
+// it (and deletes a participant's status updates), in the same transaction as the delete.
+// See lib/orphans.js. A nightly job repairs anything older (data imported from Base44, say).
+onRecordDeleteExecute((e) => {
+  require(`${__hooks}/lib/orphans.js`).onDelete(e.app, e.record);
+  e.next();
+}, "frequencies", "operators", "aide_stations", "participants", "event_logs");
+
+// Admin-only report (GET) and repair (POST). Superusers and ECS admins only.
+const ORPHAN_AUTH = $apis.requireAuth("ecs_users", "_superusers");
+routerAdd("GET", "/api/ecs/admin/orphans", (e) => {
+  const orphans = require(`${__hooks}/lib/orphans.js`);
+  orphans.guard(e);
+  const found = orphans.find($app);
+  return e.json(200, { ok: true, total: found.reduce((n, f) => n + f.count, 0), orphans: found });
+}, ORPHAN_AUTH);
+routerAdd("POST", "/api/ecs/admin/orphans/clean", (e) => {
+  const orphans = require(`${__hooks}/lib/orphans.js`);
+  orphans.guard(e);
+  const r = orphans.clean($app);
+  return e.json(200, { ok: true, cleared: r.cleared, deleted: r.deleted });
+}, ORPHAN_AUTH);
+
+// Nightly repair of dead links. Set ECS_ORPHAN_CLEANUP=off in the env file to switch it off.
+cronAdd("ecs_orphan_cleanup", "30 3 * * *", () => {
+  if (String($os.getenv("ECS_ORPHAN_CLEANUP") || "").toLowerCase() === "off") return;
+  try {
+    const r = require(`${__hooks}/lib/orphans.js`).clean($app);
+    if (r.cleared || r.deleted) console.log(`[ecs] orphan cleanup: cleared ${r.cleared} link(s), deleted ${r.deleted} record(s)`);
+  } catch (err) { console.log("[ecs] orphan cleanup:", String(err)); }
+});
+
 // ------------------------------------------------------- record defaults + audit fields
 // (schema defaults and created_date/updated_date/created_by)
 const ECS_COLLECTIONS = [

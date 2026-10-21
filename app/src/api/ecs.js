@@ -110,3 +110,15 @@ export async function callFunction(fn, params) {
   }
   return { data, status: res.status };
 }
+
+/** Admin-only server routes (/api/ecs/admin/...). Resolves to the parsed JSON; rejects with a readable message. */
+export async function adminRequest(method, path) {
+  const res = await fetch(`/api/ecs/admin/${path}`, {
+    method,
+    headers: { 'content-type': 'application/json', ...(pb.authStore.token ? { authorization: pb.authStore.token } : {}) },
+  });
+  const text = await res.text();
+  let data; try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+  if (!res.ok) throw new Error((data && (data.error || data.message)) || `Request failed (${res.status})`);
+  return data;
+}

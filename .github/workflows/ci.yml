@@ -56,3 +56,32 @@ jobs:
             PB_APP_URL=https://ecs.example PB_TRUSTED_PROXY=1 node deploy/pb-settings.mjs
       - if: failure()
         run: cat serve.log
+
+  orphans-smoke:
+    runs-on: ubuntu-latest
+    env:
+      PB_VERSION: "0.40.5"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install PocketBase
+        run: |
+          mkdir -p "$RUNNER_TEMP/pb"
+          curl -fsSL -o "$RUNNER_TEMP/pb/pb.zip" "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_amd64.zip"
+          unzip -q "$RUNNER_TEMP/pb/pb.zip" pocketbase -d "$RUNNER_TEMP/pb"
+          echo "PB=$RUNNER_TEMP/pb/pocketbase" >> "$GITHUB_ENV"
+      - name: Start PocketBase
+        run: |
+          "$PB" superuser upsert ci@test.local ci-test-pass-1234 --dir ./ci-data --migrationsDir pocketbase/pb_migrations
+          ECS_ADMIN_PIN=246810 "$PB" serve --http 127.0.0.1:8090 --dir ./ci-data \
+            --migrationsDir pocketbase/pb_migrations --hooksDir pocketbase/pb_hooks --indexFallback=true > serve.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8090/api/health >/dev/null && break; sleep 1; done
+      - name: Orphan handling (delete hooks, report, repair, event cascade)
+        run: |
+          PB_URL=http://127.0.0.1:8090 PB_SUPERUSER_EMAIL=ci@test.local PB_SUPERUSER_PASSWORD=ci-test-pass-1234 ECS_ADMIN_PIN=246810 \
+            node pocketbase/test/orphans.smoke.mjs
+          # the hook must never have logged a failure (it used to, while an event's children were being deleted)
+          ! grep -q "\[ecs\] orphans" serve.log
+      - if: failure()
+        run: cat serve.log

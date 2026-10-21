@@ -3,6 +3,7 @@ import { db } from "@/api/ecs";
 import { MODULES } from "@/lib/modules";
 import { useEvent } from "@/components/EventContext";
 import { useAuth } from "@/components/PinGate";
+import OrphanCheck from "@/components/OrphanCheck";
 import { Plus, Edit2, Trash2, X, Save, Radio, CheckCircle, Copy, ShieldCheck } from "lucide-react";
 import { TIMEZONE_OPTIONS, formatEventDateTime, getTzAbbr } from "@/lib/eventTime";
 
@@ -180,6 +181,8 @@ export default function Events() {
             <p className="text-xs text-gray-600 mt-2">This PIN grants full admin access to all events.</p>
           </div>
         )}
+
+        {isAdmin && <OrphanCheck />}
 
         <div className="space-y-3">
           {loading ? (
